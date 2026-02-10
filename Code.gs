@@ -13,7 +13,7 @@
 const KALENDER_ID = "eisbelegung@eissporthalle-solingen.de"; // Deine Kalender-ID hier eintragen
 
 // Zeitraster-Einstellungen
-const START_STUNDE = 5;   // Kalender beginnt um 6:00 Uhr
+const START_STUNDE = 6;   // Kalender beginnt um 6:00 Uhr
 const END_STUNDE = 23;    // Kalender endet um 23:00 Uhr
 
 // ============ WEB-APP EINSTIEGSPUNKT ============
@@ -306,83 +306,107 @@ function getHtmlContent() {
     }
     
     /* Farben für Termine */
-    .event[data-color="1"] { 
+    .event[data-color="1"], .all-day-event[data-color="1"] { 
       background: rgba(164, 189, 252, 0.3);
       border-left-color: #a4bdfc;
     }
-    .event[data-color="2"] { 
+    .event[data-color="2"], .all-day-event[data-color="2"] { 
       background: rgba(122, 231, 191, 0.3);
       border-left-color: #7ae7bf;
     }
-    .event[data-color="3"] { 
+    .event[data-color="3"], .all-day-event[data-color="3"] { 
       background: rgba(219, 173, 255, 0.3);
       border-left-color: #dbadff;
     }
-    .event[data-color="4"] { 
+    .event[data-color="4"], .all-day-event[data-color="4"] { 
       background: rgba(255, 136, 124, 0.3);
       border-left-color: #ff887c;
     }
-    .event[data-color="5"] { 
+    .event[data-color="5"], .all-day-event[data-color="5"] { 
       background: rgba(251, 215, 91, 0.3);
       border-left-color: #fbd75b;
     }
-    .event[data-color="6"] { 
+    .event[data-color="6"], .all-day-event[data-color="6"] { 
       background: rgba(255, 184, 120, 0.3);
       border-left-color: #ffb878;
     }
-    .event[data-color="7"] { 
+    .event[data-color="7"], .all-day-event[data-color="7"] { 
       background: rgba(70, 214, 219, 0.3);
       border-left-color: #46d6db;
     }
-    .event[data-color="8"] { 
+    .event[data-color="8"], .all-day-event[data-color="8"] { 
       background: rgba(225, 225, 225, 0.5);
       border-left-color: #e1e1e1;
     }
-    .event[data-color="9"] { 
+    .event[data-color="9"], .all-day-event[data-color="9"] { 
       background: rgba(84, 132, 237, 0.3);
       border-left-color: #5484ed;
     }
-    .event[data-color="10"] { 
+    .event[data-color="10"], .all-day-event[data-color="10"] { 
       background: rgba(81, 183, 73, 0.3);
       border-left-color: #51b749;
     }
-    .event[data-color="11"] { 
+    .event[data-color="11"], .all-day-event[data-color="11"] { 
       background: rgba(220, 33, 39, 0.3);
       border-left-color: #dc2127;
     }
-    .event[data-color="standard"], .event[data-color=""] { 
+    .event[data-color="standard"], .event[data-color=""], 
+    .all-day-event[data-color="standard"], .all-day-event[data-color=""] { 
       background: rgba(70, 214, 219, 0.3);
       border-left-color: #46d6db;
     }
     
     .all-day-section {
       background: #fff8e1;
-      padding: 10px;
       border-bottom: 2px solid #e0e0e0;
       display: none;
+      min-height: 40px;
     }
     
     .all-day-section.has-events {
       display: grid;
       grid-template-columns: 60px repeat(7, 1fr);
-      gap: 5px;
+      gap: 0;
+      padding: 10px 0;
     }
     
     .all-day-label {
       font-size: 11px;
       color: #666;
       font-weight: 600;
-      padding: 5px;
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8f9fa;
+      border-right: 2px solid #e0e0e0;
+    }
+    
+    .all-day-column {
+      padding: 0 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      border-right: 1px solid #e0e0e0;
     }
     
     .all-day-event {
       padding: 6px 8px;
       border-radius: 3px;
       border-left: 3px solid;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       text-align: center;
       cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.2s;
+    }
+    
+    .all-day-event:hover {
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      transform: translateY(-1px);
     }
     
     .loading {
@@ -539,7 +563,50 @@ function getHtmlContent() {
       const heute = new Date();
       heute.setHours(0, 0, 0, 0);
       
-      let html = '<div class="calendar-wrapper"><div class="calendar-grid">';
+      let html = '';
+      
+      // ========== GANZTÄGIGE TERMINE SECTION ==========
+      const ganztaegigTermine = result.termine.filter(t => t.ganztaegig);
+      
+      if (ganztaegigTermine.length > 0) {
+        html += '<div class="all-day-section has-events">';
+        html += '<div class="all-day-label">Ganztägig</div>';
+        
+        // Für jeden Tag eine Spalte
+        for (let tagIndex = 0; tagIndex < 7; tagIndex++) {
+          const tag = new Date(montag);
+          tag.setDate(tag.getDate() + tagIndex);
+          tag.setHours(0, 0, 0, 0);
+          
+          html += '<div class="all-day-column">';
+          
+          // Finde ganztägige Termine für diesen Tag
+          ganztaegigTermine.forEach(termin => {
+            const tStart = new Date(termin.start);
+            tStart.setHours(0, 0, 0, 0);
+            const tEnde = new Date(termin.ende);
+            tEnde.setHours(0, 0, 0, 0);
+            
+            // Prüfe ob Termin an diesem Tag ist (ganztägige Termine können mehrere Tage dauern)
+            if (tag >= tStart && tag < tEnde) {
+              html += \`
+                <div class="all-day-event" 
+                     data-color="\${termin.farbe}"
+                     title="\${termin.beschreibung || termin.titel}">
+                  \${termin.titel}
+                </div>
+              \`;
+            }
+          });
+          
+          html += '</div>';
+        }
+        
+        html += '</div>';
+      }
+      
+      // ========== ZEITRASTER KALENDER ==========
+      html += '<div class="calendar-wrapper"><div class="calendar-grid">';
       
       // Ecke oben links
       html += '<div class="corner-cell"></div>';
@@ -572,9 +639,9 @@ function getHtmlContent() {
           
           html += \`<div class="hour-cell" id="cell-\${tagIndex}-\${stunde}">\`;
           
-          // Termine für diese Stunde und diesen Tag
+          // Termine für diese Stunde und diesen Tag (OHNE ganztägige)
           const stundenTermine = result.termine.filter(t => {
-            if (t.ganztaegig) return false;
+            if (t.ganztaegig) return false;  // Ganztägige werden oben angezeigt
             
             const tStart = new Date(t.start);
             const tEnde = new Date(t.ende);
