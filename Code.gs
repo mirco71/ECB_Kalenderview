@@ -13,7 +13,7 @@
 const KALENDER_ID = "eisbelegung@eissporthalle-solingen.de"; // Deine Kalender-ID hier eintragen
 
 // Zeitraster-Einstellungen
-const START_STUNDE = 6;   // Kalender beginnt um 6:00 Uhr
+const START_STUNDE = 5;   // Kalender beginnt um 6:00 Uhr
 const END_STUNDE = 23;    // Kalender endet um 23:00 Uhr
 
 // ============ WEB-APP EINSTIEGSPUNKT ============
