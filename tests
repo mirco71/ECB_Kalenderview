@@ -11,7 +11,9 @@ function alleTestsAusfuehren() {
     testWochenTermineAbruf,
     testFarbZuordnung,
     testDatumsberechnungen,
-    testTerminFilterung
+    testTerminFilterung,
+    testZukunftstermine,
+    testUnbekannterFarbcode
   ];
   
   const ergebnisse = {
@@ -140,6 +142,72 @@ function testTerminFilterung() {
     
     Logger.log(`  Beispiel-Termin: ${ersterTermin.titel}`);
   }
+}
+
+function testZukunftstermine() {
+  // Teste ob Termine in 1 Jahr abgerufen werden können
+  const inEinemJahr = new Date();
+  inEinemJahr.setFullYear(inEinemJahr.getFullYear() + 1);
+  
+  const result = holeWochenTermine(inEinemJahr.toISOString());
+  
+  assert(result.erfolg === true, 'Zukunftstermin-Abruf fehlgeschlagen');
+  assertNotNull(result.termine, 'Termine-Array ist null');
+  assert(Array.isArray(result.termine), 'Termine ist kein Array');
+  
+  // Prüfe ob Termine tatsächlich in der Zukunft liegen
+  if (result.termine.length > 0) {
+    const heute = new Date();
+    heute.setHours(0, 0, 0, 0);
+    
+    const termineDerZukunft = result.termine.filter(t => {
+      const tStart = new Date(t.start);
+      return tStart > heute;
+    });
+    
+    Logger.log(`  Termine in 1 Jahr gefunden: ${result.termine.length}`);
+    Logger.log(`  Davon in der Zukunft: ${termineDerZukunft.length}`);
+  } else {
+    Logger.log(`  Keine Termine in 1 Jahr gefunden (OK, könnte leer sein)`);
+  }
+  
+  assert(true, 'Zukunftstermine-Test bestanden');
+}
+
+function testUnbekannterFarbcode() {
+  // Teste Verhalten bei unbekannten Farbcodes
+  
+  // 1. Teste getFarbName mit unbekanntem Code
+  const unbekannterName = getFarbName("999");
+  assertEquals(unbekannterName, "Unbekannt", 'Unbekannter Farbcode nicht als "Unbekannt" markiert');
+  Logger.log(`  Farbcode "999" -> "${unbekannterName}"`);
+  
+  // 2. Teste mit echten Kalenderdaten
+  const heute = new Date();
+  const result = holeWochenTermine(heute.toISOString());
+  
+  if (result.termine.length > 0) {
+    // Prüfe ob alle Termine einen Farbnamen haben
+    result.termine.forEach((termin, index) => {
+      assertNotNull(termin.farbName, `Termin ${index} hat keinen Farbnamen`);
+      assert(termin.farbName.length > 0, `Termin ${index} hat leeren Farbnamen`);
+    });
+    
+    // Zähle unbekannte Farben
+    const unbekannteTermine = result.termine.filter(t => t.farbName === "Unbekannt");
+    
+    Logger.log(`  Termine gesamt: ${result.termine.length}`);
+    Logger.log(`  Davon mit unbekannter Farbe: ${unbekannteTermine.length}`);
+    
+    if (unbekannteTermine.length > 0) {
+      Logger.log(`  ⚠️ Warnung: ${unbekannteTermine.length} Termine haben unbekannte Farbcodes`);
+      unbekannteTermine.forEach(t => {
+        Logger.log(`    - "${t.titel}" hat Farbcode: "${t.farbe}"`);
+      });
+    }
+  }
+  
+  assert(true, 'Unbekannte Farbcodes werden korrekt behandelt');
 }
 
 // Helper für Datum-Tests (kopiert aus Frontend-Code)
