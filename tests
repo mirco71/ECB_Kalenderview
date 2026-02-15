@@ -1,0 +1,202 @@
+/**
+ * Test-Framework für Google Apps Script
+ * Führe aus: Menü > Tests ausführen
+ */
+
+// ============ TEST RUNNER ============
+
+function alleTestsAusfuehren() {
+  const tests = [
+    testKalenderZugriff,
+    testWochenTermineAbruf,
+    testFarbZuordnung,
+    testDatumsberechnungen,
+    testTerminFilterung
+  ];
+  
+  const ergebnisse = {
+    gesamt: tests.length,
+    erfolgreich: 0,
+    fehlgeschlagen: 0,
+    details: []
+  };
+  
+  tests.forEach(test => {
+    try {
+      test();
+      ergebnisse.erfolgreich++;
+      ergebnisse.details.push({
+        name: test.name,
+        status: '✅ BESTANDEN'
+      });
+      Logger.log(`✅ ${test.name} - BESTANDEN`);
+    } catch (error) {
+      ergebnisse.fehlgeschlagen++;
+      ergebnisse.details.push({
+        name: test.name,
+        status: '❌ FEHLER',
+        fehler: error.message
+      });
+      Logger.log(`❌ ${test.name} - FEHLER: ${error.message}`);
+    }
+  });
+  
+  Logger.log('\n=== TEST-ZUSAMMENFASSUNG ===');
+  Logger.log(`Gesamt: ${ergebnisse.gesamt}`);
+  Logger.log(`Erfolgreich: ${ergebnisse.erfolgreich}`);
+  Logger.log(`Fehlgeschlagen: ${ergebnisse.fehlgeschlagen}`);
+  
+  return ergebnisse;
+}
+
+// ============ HELPER FUNKTIONEN ============
+
+function assert(bedingung, nachricht) {
+  if (!bedingung) {
+    throw new Error(nachricht || 'Assertion fehlgeschlagen');
+  }
+}
+
+function assertEquals(erwartet, tatsaechlich, nachricht) {
+  if (erwartet !== tatsaechlich) {
+    throw new Error(
+      `${nachricht || 'Werte nicht gleich'}\nErwartet: ${erwartet}\nTatsächlich: ${tatsaechlich}`
+    );
+  }
+}
+
+function assertNotNull(wert, nachricht) {
+  if (wert === null || wert === undefined) {
+    throw new Error(nachricht || 'Wert ist null/undefined');
+  }
+}
+
+function assertArrayLength(array, erwartetelaenge, nachricht) {
+  if (!Array.isArray(array)) {
+    throw new Error('Wert ist kein Array');
+  }
+  if (array.length !== erwartetelaenge) {
+    throw new Error(
+      `${nachricht || 'Array-Länge falsch'}\nErwartet: ${erwartetelaenge}\nTatsächlich: ${array.length}`
+    );
+  }
+}
+
+// ============ BACKEND TESTS ============
+
+function testKalenderZugriff() {
+  const kalender = CalendarApp.getCalendarById(KALENDER_ID);
+  assertNotNull(kalender, 'Kalender konnte nicht gefunden werden');
+  Logger.log(`  Kalender gefunden: ${kalender.getName()}`);
+}
+
+function testWochenTermineAbruf() {
+  const heute = new Date();
+  const result = holeWochenTermine(heute.toISOString());
+  
+  assert(result.erfolg === true, 'API-Aufruf nicht erfolgreich');
+  assertNotNull(result.termine, 'Termine-Array ist null');
+  assert(Array.isArray(result.termine), 'Termine ist kein Array');
+  assertEquals(result.startStunde, START_STUNDE, 'StartStunde falsch');
+  assertEquals(result.endStunde, END_STUNDE, 'EndStunde falsch');
+  
+  Logger.log(`  ${result.termine.length} Termine gefunden`);
+}
+
+function testFarbZuordnung() {
+  // Teste bekannte Farben
+  assertEquals(getFarbName("2"), "STB", 'Farbe 2 falsch zugeordnet');
+  assertEquals(getFarbName("7"), "ECB", 'Farbe 7 falsch zugeordnet');
+  assertEquals(getFarbName("8"), "Vermietung", 'Farbe 8 falsch zugeordnet');
+  assertEquals(getFarbName("11"), "öffentliche Laufzeit", 'Farbe 11 falsch zugeordnet');
+  
+  // Teste Fallback
+  assertEquals(getFarbName("standard"), "ECB", 'Standard-Farbe falsch');
+  assertEquals(getFarbName(""), "ECB", 'Leere Farbe falsch');
+  assertEquals(getFarbName("99"), "Unbekannt", 'Unbekannte Farbe nicht behandelt');
+}
+
+function testDatumsberechnungen() {
+  // Teste Wochenbeginn (Montag)
+  const testDatum = new Date('2024-02-15'); // Donnerstag
+  const montag = getMondayOfWeekTest(testDatum);
+  
+  assertEquals(montag.getDay(), 1, 'Montag nicht korrekt berechnet');
+  assertEquals(montag.getDate(), 12, 'Montag-Datum falsch');
+}
+
+function testTerminFilterung() {
+  const heute = new Date();
+  const result = holeWochenTermine(heute.toISOString());
+  
+  if (result.termine.length > 0) {
+    // Prüfe Termin-Struktur
+    const ersterTermin = result.termine[0];
+    assertNotNull(ersterTermin.titel, 'Titel fehlt');
+    assertNotNull(ersterTermin.start, 'Startzeit fehlt');
+    assertNotNull(ersterTermin.ende, 'Endzeit fehlt');
+    assertNotNull(ersterTermin.farbe, 'Farbe fehlt');
+    assert(typeof ersterTermin.ganztaegig === 'boolean', 'Ganztägig-Flag falsch');
+    
+    Logger.log(`  Beispiel-Termin: ${ersterTermin.titel}`);
+  }
+}
+
+// Helper für Datum-Tests (kopiert aus Frontend-Code)
+function getMondayOfWeekTest(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
+// ============ INTEGRATION TESTS ============
+
+function testVollstaendigerWorkflow() {
+  Logger.log('\n=== INTEGRATION TEST: Vollständiger Workflow ===');
+  
+  // 1. Kalender abrufen
+  const heute = new Date();
+  const result = holeWochenTermine(heute.toISOString());
+  assert(result.erfolg, 'Kalenderabruf fehlgeschlagen');
+  
+  // 2. Termine verarbeiten
+  const ganztaegig = result.termine.filter(t => t.ganztaegig);
+  const zeitgebunden = result.termine.filter(t => !t.ganztaegig);
+  
+  Logger.log(`  Ganztägige Termine: ${ganztaegig.length}`);
+  Logger.log(`  Zeitgebundene Termine: ${zeitgebunden.length}`);
+  
+  // 3. Farben prüfen
+  const farben = new Set(result.termine.map(t => t.farbName));
+  Logger.log(`  Verschiedene Kategorien: ${farben.size}`);
+  
+  assert(true, 'Integration Test bestanden');
+}
+
+// ============ PERFORMANCE TESTS ============
+
+function testPerformance() {
+  Logger.log('\n=== PERFORMANCE TEST ===');
+  
+  const start = new Date().getTime();
+  const heute = new Date();
+  holeWochenTermine(heute.toISOString());
+  const ende = new Date().getTime();
+  
+  const dauer = ende - start;
+  Logger.log(`  Ausführungszeit: ${dauer}ms`);
+  
+  assert(dauer < 5000, `Performance-Test fehlgeschlagen: ${dauer}ms (max 5000ms)`);
+}
+
+// ============ MENU HINZUFÜGEN ============
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('🧪 Tests')
+    .addItem('Alle Tests ausführen', 'alleTestsAusfuehren')
+    .addItem('Integration Test', 'testVollstaendigerWorkflow')
+    .addItem('Performance Test', 'testPerformance')
+    .addToUi();
+}
