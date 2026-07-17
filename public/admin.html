@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Kalender</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <div class="admin-container">
+    <!-- Header -->
+    <div class="admin-header">
+      <h1>⚙️ Kalender Verwaltung</h1>
+      <div class="admin-header-actions">
+        <span id="userInfo"></span>
+        <a href="/" class="btn btn-secondary">📅 Kalender</a>
+        <button class="btn btn-secondary" onclick="logout()">Abmelden</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="admin-tabs">
+      <div class="admin-tab active" data-tab="events" onclick="switchTab('events')">📅 Termine</div>
+      <div class="admin-tab" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
+      <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
+    </div>
+
+    <!-- Content -->
+    <div class="admin-content">
+
+      <!-- ============ EVENTS TAB ============ -->
+      <div class="tab-panel active" id="tab-events">
+        <div class="form-section" id="eventFormSection">
+          <h3 id="eventFormTitle">Neuen Termin erstellen</h3>
+          <form id="eventForm">
+            <input type="hidden" id="eventId">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="eventTitle">Titel *</label>
+                <input type="text" id="eventTitle" required>
+              </div>
+              <div class="form-group">
+                <label for="eventCategory">Kategorie *</label>
+                <select id="eventCategory" required></select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="eventStart">Start *</label>
+                <input type="datetime-local" id="eventStart" required>
+              </div>
+              <div class="form-group">
+                <label for="eventEnd">Ende *</label>
+                <input type="datetime-local" id="eventEnd" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="eventLocation">Ort</label>
+                <input type="text" id="eventLocation">
+              </div>
+              <div class="form-group checkbox-group">
+                <input type="checkbox" id="eventAllDay">
+                <label for="eventAllDay">Ganztägig</label>
+              </div>
+            </div>
+            <div class="form-row" id="repeatRow">
+              <div class="form-group">
+                <label for="eventRepeatUntil">Wöchentlich wiederholen bis</label>
+                <input type="date" id="eventRepeatUntil">
+                <small style="color:#888;margin-top:2px">Leer = einmalig, Datum = wöchentliche Serie bis zu diesem Tag</small>
+              </div>
+              <div></div>
+            </div>
+            <div class="form-row full">
+              <div class="form-group">
+                <label for="eventDescription">Beschreibung</label>
+                <textarea id="eventDescription" rows="2"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="eventSubmitBtn">Termin erstellen</button>
+              <button type="button" class="btn btn-outline" onclick="resetEventForm()" style="display:none" id="eventCancelBtn">Abbrechen</button>
+            </div>
+          </form>
+        </div>
+
+        <h3>Termine</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="eventFilterStart">Von</label>
+            <input type="date" id="eventFilterStart">
+          </div>
+          <div class="form-group">
+            <label for="eventFilterEnd">Bis</label>
+            <input type="date" id="eventFilterEnd">
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadEvents()" style="margin-bottom:10px">🔄 Aktualisieren</button>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Titel</th>
+              <th>Kategorie</th>
+              <th>Start</th>
+              <th>Ende</th>
+              <th>Ganztägig</th>
+              <th>Serie</th>
+              <th class="actions">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTableBody">
+            <tr><td colspan="7" style="text-align:center;color:#999">Lade...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ============ CATEGORIES TAB ============ -->
+      <div class="tab-panel" id="tab-categories">
+        <div class="form-section admin-only" id="categoryFormSection">
+          <h3 id="categoryFormTitle">Neue Kategorie erstellen</h3>
+          <form id="categoryForm">
+            <input type="hidden" id="categoryId">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="categoryName">Name *</label>
+                <input type="text" id="categoryName" required>
+              </div>
+              <div class="form-group">
+                <label for="categoryColor">Farbe *</label>
+                <input type="color" id="categoryColor" value="#1a73e8" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="categorySortOrder">Sortierung</label>
+                <input type="number" id="categorySortOrder" value="0">
+              </div>
+              <div></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="categorySubmitBtn">Kategorie erstellen</button>
+              <button type="button" class="btn btn-outline" onclick="resetCategoryForm()" style="display:none" id="categoryCancelBtn">Abbrechen</button>
+            </div>
+          </form>
+        </div>
+
+        <h3>Kategorien</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Farbe</th>
+              <th>Name</th>
+              <th>Sortierung</th>
+              <th class="actions admin-only">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="categoriesTableBody">
+            <tr><td colspan="4" style="text-align:center;color:#999">Lade...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ============ USERS TAB ============ -->
+      <div class="tab-panel" id="tab-users">
+        <div class="form-section">
+          <h3 id="userFormTitle">Neuen Benutzer erstellen</h3>
+          <form id="userForm">
+            <input type="hidden" id="userId">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="userUsername">Benutzername *</label>
+                <input type="text" id="userUsername" required minlength="3">
+              </div>
+              <div class="form-group">
+                <label for="userDisplayName">Anzeigename *</label>
+                <input type="text" id="userDisplayName" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="userPassword">Passwort *</label>
+                <input type="password" id="userPassword" minlength="6">
+              </div>
+              <div class="form-group">
+                <label for="userRole">Rolle *</label>
+                <select id="userRole" required>
+                  <option value="editor">Editor</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="userSubmitBtn">Benutzer erstellen</button>
+              <button type="button" class="btn btn-outline" onclick="resetUserForm()" style="display:none" id="userCancelBtn">Abbrechen</button>
+            </div>
+          </form>
+        </div>
+
+        <h3>Benutzer</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Benutzername</th>
+              <th>Anzeigename</th>
+              <th>Rolle</th>
+              <th class="actions">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <tr><td colspan="5" style="text-align:center;color:#999">Lade...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

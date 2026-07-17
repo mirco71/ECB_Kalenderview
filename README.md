@@ -1,0 +1,191 @@
+# ECB Kalenderview
+
+Self-hosted calendar viewer for Eissporthalle Solingen — replaces the Google Apps Script version with an independent Node.js application.
+
+## Features
+
+- **Public weekly calendar view** — no login required to view events
+- **Editor accounts** — authenticated users can create, edit, and delete events
+- **Admin panel** — manage users, categories, and events
+- **Color-coded categories** — 11 pre-configured categories matching the original Google Calendar
+- **Responsive design** — works on desktop and mobile
+- **No Google account needed** — fully self-hosted
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 20 LTS or newer
+- npm (comes with Node.js)
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+cd ECB_Kalenderview
+npm install
+```
+
+### 2. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set a secure `JWT_SECRET`:
+
+```
+JWT_SECRET=your-random-secret-string-here
+```
+
+### 3. Create the first admin user
+
+```bash
+npm run seed
+```
+
+This creates a default admin user (`admin` / `admin123`). You can customize:
+
+```bash
+npm run seed -- --username myadmin --password mypassword --name "Max Mustermann"
+```
+
+### 4. Start the server
+
+```bash
+npm start
+```
+
+The application will be available at `http://localhost:3000`.
+
+For development with auto-reload:
+
+```bash
+npm run dev
+```
+
+## Usage
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:3000` | Public calendar view (read-only) |
+| `http://localhost:3000/login.html` | Login page |
+| `http://localhost:3000/admin.html` | Admin panel (requires login) |
+
+### User Roles
+
+| Role | Permissions |
+|------|-------------|
+| **Editor** | Create, edit, and delete events |
+| **Admin** | Everything editor can do + manage users + manage categories |
+
+## API Endpoints
+
+### Public (no auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/events?start=ISO&end=ISO` | Fetch events in date range |
+| `GET` | `/api/events/:id` | Fetch single event |
+| `GET` | `/api/categories` | List all categories |
+| `GET` | `/api/config` | Calendar configuration |
+
+### Authenticated (JWT required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/login` | Login, get JWT token |
+| `GET` | `/api/auth/me` | Verify token / get user info |
+| `POST` | `/api/events` | Create event |
+| `PUT` | `/api/events/:id` | Update event |
+| `DELETE` | `/api/events/:id` | Delete event |
+
+### Admin only
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/users` | List users |
+| `POST` | `/api/users` | Create user |
+| `PUT` | `/api/users/:id` | Update user |
+| `DELETE` | `/api/users/:id` | Delete user |
+| `POST` | `/api/categories` | Create category |
+| `PUT` | `/api/categories/:id` | Update category |
+| `DELETE` | `/api/categories/:id` | Delete category |
+
+## Testing
+
+```bash
+npm test
+```
+
+## Docker Deployment
+
+### Build and run
+
+```bash
+docker build -t ecb-kalender .
+docker run -d -p 3000:3000 \
+  -v ecb-data:/app/data \
+  -e JWT_SECRET=your-secret-here \
+  ecb-kalender
+```
+
+### Then seed the admin user
+
+```bash
+docker exec -it <container-id> node server/seed.js
+```
+
+## Deployment on Render.com (Free)
+
+1. Push code to GitHub
+2. Create a new **Web Service** on [Render](https://render.com)
+3. Connect your GitHub repository
+4. Set build command: `npm install`
+5. Set start command: `node server/index.js`
+6. Add environment variables:
+   - `JWT_SECRET` — random secret string
+   - `CALENDAR_NAME` — your calendar name
+7. Add a **Persistent Disk** mounted at `/app/data` for the SQLite database
+8. Deploy
+
+## Project Structure
+
+```
+ECB_Kalenderview/
+├── server/
+│   ├── index.js              # Express app entry point
+│   ├── config.js             # Configuration from environment
+│   ├── database.js           # SQLite setup + migrations + seed
+│   ├── seed.js               # Create initial admin user
+│   ├── middleware/
+│   │   └── auth.js           # JWT verification middleware
+│   └── routes/
+│       ├── auth.js           # Login / verify token
+│       ├── events.js         # CRUD events
+│       ├── categories.js     # CRUD categories
+│       └── users.js          # CRUD users (admin)
+├── public/
+│   ├── index.html            # Public calendar view
+│   ├── login.html            # Login page
+│   ├── admin.html            # Admin panel
+│   ├── css/
+│   │   ├── calendar.css      # Calendar styles
+│   │   └── admin.css         # Admin panel styles
+│   └── js/
+│       ├── api.js            # Fetch wrapper
+│       ├── calendar.js       # Calendar rendering
+│       └── admin.js          # Admin panel logic
+├── tests/
+│   ├── auth.test.js
+│   ├── events.test.js
+│   └── categories.test.js
+├── data/                     # SQLite database (gitignored)
+├── package.json
+├── Dockerfile
+├── .env.example
+└── .gitignore
+```
+
+## License
+
+MIT

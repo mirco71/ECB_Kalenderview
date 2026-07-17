@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalender Wochenansicht</title>
+  <link rel="stylesheet" href="/css/calendar.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 id="kalenderName">📅 Kalender</h1>
+      <div class="nav-controls">
+        <button class="nav-btn" onclick="vorherigeWoche()">← Vorherige</button>
+        <span class="week-info" id="weekInfo">KW --</span>
+        <button class="nav-btn" onclick="heutigeWoche()">Heute</button>
+        <button class="nav-btn" onclick="naechsteWoche()">Nächste →</button>
+      </div>
+    </div>
+    
+    <div id="kalenderContent">
+      <div class="loading">⏳ Lade Kalender...</div>
+    </div>
+    
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <a href="/login.html" class="admin-link">🔒 Admin</a>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/calendar.js"></script>
+</body>
+</html>

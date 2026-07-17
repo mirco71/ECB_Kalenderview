@@ -1,0 +1,25 @@
+services:
+  ecb-kalender:
+    build:
+      context: .
+    image: ecb-kalender:latest
+    container_name: ecb-kalender
+    restart: unless-stopped
+    ports:
+      - "3050:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /app/data/calendar.db
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET muss als Stack-Umgebungsvariable in Portainer gesetzt werden}
+      CALENDAR_NAME: ${CALENDAR_NAME:-Eisbelegung Eissporthalle Solingen}
+      START_HOUR: ${START_HOUR:-6}
+      END_HOUR: ${END_HOUR:-23}
+    volumes:
+      - ecb-data:/app/data
+      # Alternative: Bind-Mount auf einen Synology-Freigabeordner statt
+      # eines benannten Volumes (einfacher für Hyper Backup):
+      # - /volume1/docker/ecb-kalender/data:/app/data
+
+volumes:
+  ecb-data:

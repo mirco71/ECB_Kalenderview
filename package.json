@@ -1,0 +1,29 @@
+{
+  "name": "ecb-kalenderview",
+  "version": "1.0.0",
+  "description": "Self-hosted calendar viewer for Eissporthalle Solingen",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "seed": "node server/seed.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["calendar", "ecb", "eissporthalle"],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "sql.js": "^1.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}
