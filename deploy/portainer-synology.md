@@ -88,7 +88,9 @@ Der Container startet mit einer leeren Datenbank (Kategorien werden automatisch
 angelegt, aber **kein Benutzer**). Über die Portainer-Konsole:
 
 1. **Containers** → `ecb-kalender` → **Console**-Icon (`>_`)
-2. Command: `/bin/sh` → **Connect**
+2. Command: **`/bin/sh`** (nicht `/bin/bash` — das Alpine-Image enthält kein bash;
+   Portainers Default `/bin/bash` scheitert mit *"exec: bash: executable file not
+   found"*) → **Connect**
 3. Im Terminal:
    ```
    node server/seed.js
@@ -97,6 +99,15 @@ angelegt, aber **kein Benutzer**). Über die Portainer-Konsole:
    ```
    node server/seed.js --username myadmin --password meinPasswort --name "Max Mustermann"
    ```
+4. **Container anschließend neu starten** (Containers → `ecb-kalender` → **Restart**).
+
+   ⚠️ Zwingend nötig: Die App lädt die SQLite-Datenbank (`sql.js`) beim Start einmal
+   in den Speicher. Der Seed läuft als separater Prozess und schreibt den neuen Admin
+   nur in die Datei — der bereits laufende Server kennt ihn erst nach einem Neustart.
+   Ohne Neustart schlägt der Login fehl, und ein späterer Schreibvorgang des Servers
+   würde den geseedeten Benutzer sogar wieder überschreiben. Reihenfolge daher:
+   **seeden → Container neu starten → erst dann einloggen** (zwischendurch nichts im
+   Kalender anlegen).
 
 ## 5. Zugriff
 
