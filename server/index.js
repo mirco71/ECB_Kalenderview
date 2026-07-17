@@ -20,6 +20,10 @@ app.use(
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
+        // Ausschalten: sonst zwingt Helmet den Browser, alle Ressourcen auf
+        // HTTPS hochzustufen. Beim Betrieb hinter HTTP (z. B. Portainer-Test
+        // über LAN-IP:Port) bricht dann das Laden von CSS/JS mit SSL-Fehler.
+        upgradeInsecureRequests: null,
       },
     },
   })
