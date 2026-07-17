@@ -147,9 +147,21 @@ Die SQLite-Datenbank liegt im benannten Volume `ecb-kalender_ecb-data`
 
 Nach neuen Commits auf `main`:
 
-Stacks → `ecb-kalender` → **Pull and redeploy** (Option "Re-pull image and redeploy").
+Stacks → `ecb-kalender` → **Pull and redeploy**.
+
+⚠️ **Wichtig: die Option "Re-pull image" NICHT aktivieren.** Das Image wird lokal
+aus dem `Dockerfile` gebaut und liegt in keiner Registry — "Re-pull image" würde
+versuchen, `ecb-kalender` von Docker Hub zu ziehen, und scheitert mit
+*"pull access denied … repository does not exist"*. Nur die Git-Änderungen holen
+lassen; Portainer baut das Image dann selbst neu aus dem Dockerfile.
+
 Portainer zieht den aktuellen Repo-Stand (mit dem gespeicherten PAT), baut neu und
 startet den Container neu. Die Datenbank im Volume bleibt erhalten.
+
+Fallback, falls der Redeploy trotzdem einen Registry-Pull versucht: Stack löschen
+(**Delete this stack**) und wie in Schritt 1b–3 neu anlegen — das baut garantiert
+frisch aus dem Dockerfile. Das benannte Volume mit der Datenbank bleibt dabei
+erhalten, sofern beim Löschen keine Volumes mit entfernt werden.
 
 ## 9. Später: Produktivserver
 
@@ -171,4 +183,6 @@ typischerweise noch:
 | "JWT_SECRET muss ... gesetzt werden" beim Deploy | Environment variable im Stack-Editor nachtragen |
 | Login schlägt fehl nach Neuinstallation | Admin-Benutzer noch nicht geseedet — Schritt 4 durchführen |
 | "Pull and redeploy" schlägt mit Auth-Fehler fehl | PAT abgelaufen — neues Token erzeugen (Schritt 1a) und in Portainer unter Authentication aktualisieren |
+| "pull access denied for ecb-kalender … repository does not exist" | Beim Redeploy "Re-pull image" deaktiviert lassen (Schritt 8) — das Image wird lokal gebaut, nicht aus einer Registry gezogen |
+| Seite lädt, aber ohne Styling (CSS/JS-Fehler `ERR_SSL_PROTOCOL_ERROR`) | Alter Stand — sicherstellen, dass der Commit mit deaktiviertem `upgrade-insecure-requests` deployt ist, dann Browser hart neu laden (Strg+F5) |
 | Repo nicht auffindbar / 404 beim Klonen | Authentication nicht aktiviert oder falscher Username/Token — Schritt 1b prüfen |
