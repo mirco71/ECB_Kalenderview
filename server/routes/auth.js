@@ -15,7 +15,7 @@ router.post(
     body('username').trim().notEmpty().withMessage('Benutzername erforderlich'),
     body('password').notEmpty().withMessage('Passwort erforderlich'),
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: errors.array()[0].msg });
@@ -29,7 +29,9 @@ router.post(
       return res.status(401).json({ error: 'Ungültiger Benutzername oder Passwort' });
     }
 
-    const validPassword = bcrypt.compareSync(password, user.password_hash);
+    // Async compare so the (deliberately slow) bcrypt hashing does not block the
+    // event loop under repeated login attempts.
+    const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Ungültiger Benutzername oder Passwort' });
     }

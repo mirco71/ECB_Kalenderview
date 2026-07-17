@@ -156,7 +156,7 @@ function zeigeKalender(result) {
             const seriesBadge = termin.series_id ? ' 🔁' : '';
             html += `
               <div class="event all-day-inline"
-                   style="top: 0; height: ${fullHeight}px; background: ${termin.farbBg}; border-left-color: ${termin.farbHex};"
+                   style="top: 0; height: ${fullHeight}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
                    title="${escapeHtml(termin.beschreibung || termin.titel)}${termin.series_id ? ' (Wochenserie)' : ''} (Ganztägig)">
                 <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
                 <div class="event-time">Ganztägig</div>
@@ -206,7 +206,7 @@ function zeigeKalender(result) {
           const seriesBadge = termin.series_id ? ' 🔁' : '';
           html += `
             <div class="event"
-                 style="top: ${topOffset}px; height: ${Math.max(height, 20)}px; background: ${termin.farbBg}; border-left-color: ${termin.farbHex};"
+                 style="top: ${topOffset}px; height: ${Math.max(height, 20)}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
                  title="${escapeHtml(termin.beschreibung || termin.titel)}${termin.series_id ? ' (Wochenserie)' : ''}">
               <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
               <div class="event-time">${formatZeit(tStart)} - ${formatZeit(tEnde)}</div>
@@ -243,7 +243,7 @@ function erstelleLegende(termine) {
   sorted.forEach(([name, hex]) => {
     html += `
       <div class="legend-item">
-        <div class="legend-color" style="background: ${hex};"></div>
+        <div class="legend-color" style="background: ${escapeHtml(hex)};"></div>
         <span>${escapeHtml(name)}</span>
       </div>
     `;
@@ -262,9 +262,15 @@ function zeigeFehler(error) {
 // ============ UTIL ============
 
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  // Escapes both text- and attribute-context special chars. Quotes MUST be
+  // escaped because these values are also interpolated into double-quoted
+  // HTML attributes (title="…") — the DOM textContent trick does not escape them.
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ============ INIT ============

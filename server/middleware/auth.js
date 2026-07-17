@@ -13,7 +13,8 @@ function requireAuth(req, res, next) {
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, config.jwtSecret);
+    // Pin the algorithm so a token cannot dictate a weaker/none verification.
+    const decoded = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
     req.user = decoded;
     next();
   } catch (err) {

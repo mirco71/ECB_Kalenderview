@@ -10,26 +10,37 @@ const app = express();
 
 // ============ MIDDLEWARE ============
 
-// Security headers (relaxed CSP for inline styles/scripts in calendar)
+// Security headers.
+// - No 'unsafe-inline' in script-src: inline <script> blocks are blocked, which
+//   removes the main stored-XSS execution vector. All page scripts are external.
+// - script-src-attr keeps 'unsafe-inline' for the static onclick= handlers in the
+//   HTML; combined with strict output-escaping there is no HTML-injection path to
+//   abuse them.
+// - style-src keeps 'unsafe-inline' because the calendar positions events via
+//   inline style="" attributes.
+// - upgrade-insecure-requests disabled so CSS/JS load over plain HTTP (Portainer
+//   test via LAN-IP:Port); behind an HTTPS reverse proxy this is a no-op.
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
-        // Ausschalten: sonst zwingt Helmet den Browser, alle Ressourcen auf
-        // HTTPS hochzustufen. Beim Betrieb hinter HTTP (z. B. Portainer-Test
-        // über LAN-IP:Port) bricht dann das Laden von CSS/JS mit SSL-Fehler.
         upgradeInsecureRequests: null,
       },
     },
   })
 );
 
-app.use(cors());
+// CORS is opt-in: the bundled frontend is same-origin and needs no CORS headers.
+// Only enable (with a specific allowed origin) when a separate origin must call
+// the API — never a wildcard.
+if (config.corsOrigin) {
+  app.use(cors({ origin: config.corsOrigin }));
+}
 app.use(express.json());
 
 // Rate limit on auth endpoints

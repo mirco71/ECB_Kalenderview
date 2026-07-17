@@ -5,6 +5,11 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Accepts a 6-digit hex color or an rgb()/rgba() value with numeric components.
+// Restricting the format prevents CSS/HTML injection when the value is later
+// rendered into an inline style attribute on the public calendar.
+const COLOR_PATTERN = /^(#[0-9a-fA-F]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/;
+
 // GET /api/categories (public)
 router.get('/', (req, res) => {
   const db = getDb();
@@ -22,7 +27,7 @@ router.post(
   [
     body('name').trim().notEmpty().withMessage('Name erforderlich'),
     body('color_hex').matches(/^#[0-9a-fA-F]{6}$/).withMessage('Ungültige Farbe (z.B. #ff0000)'),
-    body('color_bg').trim().notEmpty().withMessage('Hintergrundfarbe erforderlich'),
+    body('color_bg').matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
   ],
   (req, res) => {
@@ -58,7 +63,7 @@ router.put(
     param('id').isInt(),
     body('name').optional().trim().notEmpty(),
     body('color_hex').optional().matches(/^#[0-9a-fA-F]{6}$/),
-    body('color_bg').optional().trim().notEmpty(),
+    body('color_bg').optional().matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
   ],
   (req, res) => {

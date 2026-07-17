@@ -4,6 +4,8 @@
 
 let currentUser = null;
 let categories = [];
+let events = [];
+let users = [];
 
 // ============ INIT ============
 
@@ -105,9 +107,14 @@ function formatDatetime(isoString) {
 }
 
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  // Escapes text- and attribute-context special chars (quotes included), so
+  // interpolating stored values into double-quoted HTML attributes is safe.
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function hexToRgba(hex, alpha) {
@@ -134,24 +141,28 @@ async function loadEvents() {
 
   try {
     const result = await API.getEvents(startISO, endISO);
+    events = result.termine;
     const tbody = document.getElementById('eventsTableBody');
 
-    if (result.termine.length === 0) {
+    if (events.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">Keine Termine im gewählten Zeitraum</td></tr>';
       return;
     }
 
-    tbody.innerHTML = result.termine.map(t => `
+    // Only numeric ids are interpolated into the inline handlers; all
+    // user-controlled strings are looked up from `events` inside the handler,
+    // never injected into HTML attributes.
+    tbody.innerHTML = events.map(t => `
       <tr>
         <td>${escapeHtml(t.titel)}</td>
-        <td><span class="color-preview" style="background:${t.farbHex}"></span>${escapeHtml(t.farbName)}</td>
+        <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
         <td>${formatDatetime(new Date(t.start).toISOString())}</td>
         <td>${formatDatetime(new Date(t.ende).toISOString())}</td>
         <td>${t.ganztaegig ? '✅' : ''}</td>
         <td>${t.series_id ? '🔁' : ''}</td>
         <td class="actions">
           <button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
-          <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id}, '${escapeHtml(t.titel)}', ${t.series_id ? `'${t.series_id}'` : 'null'})">🗑️</button>
+          <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>
         </td>
       </tr>
     `).join('');
@@ -230,7 +241,12 @@ async function editEvent(id) {
   }
 }
 
-async function deleteEvent(id, title, seriesId) {
+async function deleteEvent(id) {
+  const event = events.find(e => e.id === id);
+  if (!event) return;
+  const title = event.titel;
+  const seriesId = event.series_id;
+
   if (seriesId) {
     const choice = prompt(
       `Termin "${title}" gehört zu einer Serie.\n\n` +
@@ -296,12 +312,12 @@ async function loadCategories() {
     const tbody = document.getElementById('categoriesTableBody');
     tbody.innerHTML = categories.map(c => `
       <tr>
-        <td><span class="color-preview" style="background:${c.color_hex}"></span></td>
+        <td><span class="color-preview" style="background:${escapeHtml(c.color_hex)}"></span></td>
         <td>${escapeHtml(c.name)}</td>
         <td>${c.sort_order}</td>
         <td class="actions admin-only">
           <button class="btn-icon" title="Bearbeiten" onclick="editCategory(${c.id})">✏️</button>
-          <button class="btn-icon" title="Löschen" onclick="deleteCategory(${c.id}, '${escapeHtml(c.name)}')">🗑️</button>
+          <button class="btn-icon" title="Löschen" onclick="deleteCategory(${c.id})">🗑️</button>
         </td>
       </tr>
     `).join('');
@@ -360,7 +376,9 @@ function editCategory(id) {
   document.getElementById('categoryFormSection').scrollIntoView({ behavior: 'smooth' });
 }
 
-async function deleteCategory(id, name) {
+async function deleteCategory(id) {
+  const cat = categories.find(c => c.id === id);
+  const name = cat ? cat.name : '';
   if (!confirm(`Kategorie "${name}" wirklich löschen?`)) return;
 
   try {
@@ -389,9 +407,11 @@ async function loadUsers() {
   if (!currentUser || currentUser.role !== 'admin') return;
 
   try {
-    const users = await API.getUsers();
+    users = await API.getUsers();
     const tbody = document.getElementById('usersTableBody');
 
+    // Inline handlers receive only numeric ids; username/display_name are
+    // looked up from `users` in the handler, never injected into attributes.
     tbody.innerHTML = users.map(u => `
       <tr>
         <td>${u.id}</td>
@@ -399,8 +419,8 @@ async function loadUsers() {
         <td>${escapeHtml(u.display_name)}</td>
         <td>${u.role === 'admin' ? '👑 Admin' : '✏️ Editor'}</td>
         <td class="actions">
-          <button class="btn-icon" title="Bearbeiten" onclick="editUser(${u.id}, '${escapeHtml(u.username)}', '${escapeHtml(u.display_name)}', '${u.role}')">✏️</button>
-          ${u.id !== currentUser.id ? `<button class="btn-icon" title="Löschen" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">🗑️</button>` : ''}
+          <button class="btn-icon" title="Bearbeiten" onclick="editUser(${u.id})">✏️</button>
+          ${u.id !== currentUser.id ? `<button class="btn-icon" title="Löschen" onclick="deleteUser(${u.id})">🗑️</button>` : ''}
         </td>
       </tr>
     `).join('');
@@ -442,11 +462,14 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
   }
 });
 
-function editUser(id, username, displayName, role) {
-  document.getElementById('userId').value = id;
-  document.getElementById('userUsername').value = username;
-  document.getElementById('userDisplayName').value = displayName;
-  document.getElementById('userRole').value = role;
+function editUser(id) {
+  const user = users.find(u => u.id === id);
+  if (!user) return;
+
+  document.getElementById('userId').value = user.id;
+  document.getElementById('userUsername').value = user.username;
+  document.getElementById('userDisplayName').value = user.display_name;
+  document.getElementById('userRole').value = user.role;
   document.getElementById('userPassword').value = '';
   document.getElementById('userPassword').required = false;
   document.getElementById('userPassword').placeholder = 'Leer lassen = nicht ändern';
@@ -456,7 +479,9 @@ function editUser(id, username, displayName, role) {
   document.getElementById('userCancelBtn').style.display = '';
 }
 
-async function deleteUser(id, username) {
+async function deleteUser(id) {
+  const user = users.find(u => u.id === id);
+  const username = user ? user.username : '';
   if (!confirm(`Benutzer "${username}" wirklich löschen?`)) return;
 
   try {

@@ -1,4 +1,4 @@
-const { describe, it, expect, beforeAll, afterAll } = require('vitest');
+// vitest globals are enabled (globals: true in vitest.config.js) — no import needed.
 const http = require('http');
 const bcrypt = require('bcryptjs');
 
