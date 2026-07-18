@@ -280,21 +280,14 @@ function seedCategories() {
   const count = db.prepare('SELECT COUNT(*) as count FROM categories').get();
   if (count.count > 0) return;
 
-  // Letzte Spalte: group_by_title — in der Abrechnung zusätzlich nach Termin-Titel
-  // aufschlüsseln. Nur Hobbies, wie im alten Abrechnungs-Tool. Vermietung läuft
-  // bewusst in einer Summe zusammen. Im Kategorien-Tab jederzeit änderbar.
+  // group_by_title: wird in der Abrechnung zusätzlich nach Termin-Titel
+  // aufgeschlüsselt. Nur Hobbies, wie im alten Abrechnungs-Tool.
   const categories = [
-    [1, 'Lavender', '#a4bdfc', 'rgba(164, 189, 252, 0.3)', 1, 0],
-    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 2, 0],
-    [3, 'Grape', '#dbadff', 'rgba(219, 173, 255, 0.3)', 3, 0],
-    [4, 'Flamingo', '#ff887c', 'rgba(255, 136, 124, 0.3)', 4, 0],
-    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 5, 1],
-    [6, 'Tangerine', '#ffb878', 'rgba(255, 184, 120, 0.3)', 6, 0],
-    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 7, 0],
-    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 8, 0],
-    [9, 'Blueberry', '#5484ed', 'rgba(84, 132, 237, 0.3)', 9, 0],
-    [10, 'Basil', '#51b749', 'rgba(81, 183, 73, 0.3)', 10, 0],
-    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 11, 0],
+    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 1, 0],
+    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 2, 1],
+    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 3, 0],
+    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 4, 0],
+    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 5, 0],
   ];
 
   for (const cat of categories) {
@@ -303,7 +296,7 @@ function seedCategories() {
     ).run(...cat);
   }
 
-  console.log('✅ Seeded 11 categories');
+  console.log('✅ Seeded 5 categories');
 }
 
 // ============ EXPORTS ============
