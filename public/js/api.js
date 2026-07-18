@@ -81,6 +81,20 @@ const API = {
     return this.request('DELETE', `/api/events/${id}`);
   },
 
+  // ============ SERIES ============
+
+  async createSeries(data) {
+    return this.request('POST', '/api/events/series', data);
+  },
+
+  async getSeries(seriesId) {
+    return this.request('GET', `/api/events/series/${seriesId}`);
+  },
+
+  async updateSeries(seriesId, data) {
+    return this.request('PUT', `/api/events/series/${seriesId}`, data);
+  },
+
   async deleteEventSeries(seriesId) {
     return this.request('DELETE', `/api/events/series/${seriesId}`);
   },

@@ -94,10 +94,34 @@ npm run dev
 |--------|----------|-------------|
 | `POST` | `/api/auth/login` | Login, get JWT token |
 | `GET` | `/api/auth/me` | Verify token / get user info |
-| `POST` | `/api/events` | Create event |
+| `POST` | `/api/events` | Create single event |
 | `PUT` | `/api/events/:id` | Update event |
 | `DELETE` | `/api/events/:id` | Delete event |
+| `POST` | `/api/events/series` | Create a weekly series (weekday, times, period) |
+| `GET` | `/api/events/series/:id` | Series definition plus all its events |
+| `PUT` | `/api/events/series/:id` | Update the whole series (title, category, times) |
+| `DELETE` | `/api/events/series/:id` | Delete the series and all its events |
 | `GET` | `/api/stats?start=ISO&end=ISO&category_ids=5,7,8` | Billing report: count and total duration per category |
+
+### Serientermine
+
+Im Termin-Formular schaltet ein Umschalter zwischen **Einzeltermin** und
+**Serientermin**. Eine Serie wird über Wochentag, Start-/Endzeit und Zeitraum
+definiert; eine Live-Vorschau zeigt vor dem Speichern, wie viele Termine
+entstehen und wann der erste und letzte liegt.
+
+In der Terminliste erscheint eine Serie als **eine** Zeile. Ein Klick öffnet die
+Serienansicht: dort lassen sich einzelne Termine in der Uhrzeit ändern oder
+löschen (die Serie bleibt bestehen), Titel/Kategorie/Uhrzeit für alle Termine
+auf einmal setzen, oder die ganze Serie löschen. Termine mit abweichender
+Uhrzeit werden markiert.
+
+Angemeldete Benutzer (Editor und Admin) können Termine zusätzlich direkt im
+Kalender löschen — der Lösch-Button erscheint beim Überfahren des Termins.
+
+**Zeitzone**: Serien werden in lokaler Zeit berechnet, deshalb setzen
+`Dockerfile` und `docker-compose.yml` `TZ=Europe/Berlin`. Ohne feste Zeitzone
+läuft der Container in UTC und die Uhrzeiten verschieben sich.
 
 ### Billing report
 
@@ -168,13 +192,15 @@ ECB_Kalenderview/
 │   ├── index.js              # Express app entry point
 │   ├── config.js             # Configuration from environment
 │   ├── database.js           # SQLite setup + migrations + seed
+│   ├── datetime.js           # Local-time helpers for weekly series
 │   ├── seed.js               # Create initial admin user
 │   ├── middleware/
 │   │   └── auth.js           # JWT verification middleware
 │   └── routes/
 │       ├── auth.js           # Login / verify token
-│       ├── events.js         # CRUD events
+│       ├── events.js         # CRUD events + series
 │       ├── categories.js     # CRUD categories
+│       ├── stats.js          # Billing report
 │       └── users.js          # CRUD users (admin)
 ├── public/
 │   ├── index.html            # Public calendar view

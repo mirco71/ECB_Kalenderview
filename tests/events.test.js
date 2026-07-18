@@ -178,59 +178,168 @@ describe('Events API', () => {
     expect(res.status).toBe(400);
   });
 
-  it('should create a weekly series with repeat_weeks', async () => {
+  it('should ignore repeat_weeks on the single-event endpoint', async () => {
     const res = await req('POST', '/api/events', {
-      title: 'Weekly Training',
-      start_time: '2026-05-04T18:00:00.000Z',
-      end_time: '2026-05-04T20:00:00.000Z',
+      title: 'Kein Serientermin',
+      start_time: '2026-07-06T18:00:00.000Z',
+      end_time: '2026-07-06T20:00:00.000Z',
       category_id: 7,
-      description: 'Wöchentliches Training',
-      repeat_weeks: 3,
+      repeat_weeks: 5,
     }, adminToken);
 
     expect(res.status).toBe(201);
-    expect(res.body.count).toBe(3);
-    expect(res.body.series_id).toBeDefined();
-    expect(res.body.termine).toHaveLength(3);
+    expect(res.body.series_id).toBeNull();
 
-    // Verify events are 7 days apart
-    const starts = res.body.termine.map(t => new Date(t.start).getTime());
-    expect(starts[1] - starts[0]).toBe(7 * 24 * 60 * 60 * 1000);
-    expect(starts[2] - starts[1]).toBe(7 * 24 * 60 * 60 * 1000);
-
-    // All should share the same series_id
-    const seriesIds = res.body.termine.map(t => t.series_id);
-    expect(seriesIds[0]).toBe(seriesIds[1]);
-    expect(seriesIds[1]).toBe(seriesIds[2]);
+    const list = await req('GET', '/api/events?start=2026-07-06T00:00:00.000Z&end=2026-08-20T00:00:00.000Z');
+    expect(list.body.termine.filter(t => t.titel === 'Kein Serientermin')).toHaveLength(1);
   });
 
-  it('should return series_id in event response', async () => {
-    const start = '2026-05-04T00:00:00.000Z';
-    const end = '2026-05-25T00:00:00.000Z';
-    const res = await req('GET', `/api/events?start=${start}&end=${end}`);
+  // 2026-09-01 is a Tuesday; the range to 2026-09-29 covers five Tuesdays.
+  describe('Series', () => {
+    let seriesId;
+
+  it('should create a weekly series', async () => {
+    const res = await req('POST', '/api/events/series', {
+      title: 'Training Herren',
+      category_id: 7,
+      weekday: 2,
+      time_from: '18:00',
+      time_to: '20:00',
+      date_from: '2026-09-01',
+      date_to: '2026-09-29',
+      location: 'Eishalle',
+    }, adminToken);
+
+    expect(res.status).toBe(201);
+    expect(res.body.serie.anzahl).toBe(5);
+    expect(res.body.termine).toHaveLength(5);
+    seriesId = res.body.serie.id;
+
+    // Every occurrence falls on a Tuesday at the requested wall-clock time
+    for (const t of res.body.termine) {
+      const start = new Date(t.start);
+      expect(start.getDay()).toBe(2);
+      expect(start.getHours()).toBe(18);
+      expect(new Date(t.ende).getHours()).toBe(20);
+      expect(t.series_id).toBe(seriesId);
+      expect(t.abweichend).toBe(false);
+    }
+  });
+
+  it('should reject a range containing no matching weekday', async () => {
+    const res = await req('POST', '/api/events/series', {
+      title: 'Leer',
+      category_id: 7,
+      weekday: 1,
+      time_from: '18:00',
+      time_to: '20:00',
+      date_from: '2026-09-01',
+      date_to: '2026-09-03',
+    }, adminToken);
+
+    expect(res.status).toBe(400);
+  });
+
+  it('should reject an end time before the start time', async () => {
+    const res = await req('POST', '/api/events/series', {
+      title: 'Verdreht',
+      category_id: 7,
+      weekday: 2,
+      time_from: '20:00',
+      time_to: '18:00',
+      date_from: '2026-09-01',
+      date_to: '2026-09-29',
+    }, adminToken);
+
+    expect(res.status).toBe(400);
+  });
+
+  it('should load the series with all its events', async () => {
+    const res = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
 
     expect(res.status).toBe(200);
-    const seriesEvents = res.body.termine.filter(t => t.series_id !== null);
-    expect(seriesEvents.length).toBeGreaterThanOrEqual(3);
-    expect(seriesEvents[0].series_id).toBeDefined();
+    expect(res.body.serie.titel).toBe('Training Herren');
+    expect(res.body.serie.wochentag).toBe(2);
+    expect(res.body.serie.zeitVon).toBe('18:00');
+    expect(res.body.termine).toHaveLength(5);
   });
 
-  it('should delete an entire series by series_id', async () => {
-    // First get an event with a series_id
-    const listRes = await req('GET', '/api/events?start=2026-05-04T00:00:00.000Z&end=2026-05-25T00:00:00.000Z');
-    const seriesEvent = listRes.body.termine.find(t => t.series_id !== null);
-    expect(seriesEvent).toBeDefined();
+  it('should require auth to load a series', async () => {
+    const res = await req('GET', `/api/events/series/${seriesId}`);
+    expect(res.status).toBe(401);
+  });
 
-    const seriesId = seriesEvent.series_id;
+  it('should flag an individually adjusted event as abweichend', async () => {
+    const series = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    const second = series.body.termine[1];
+    const newStart = new Date(second.start);
+    newStart.setHours(19, 0, 0, 0);
+    const newEnd = new Date(second.ende);
+    newEnd.setHours(21, 0, 0, 0);
 
-    // Delete the whole series
-    const deleteRes = await req('DELETE', `/api/events/series/${seriesId}`, null, adminToken);
-    expect(deleteRes.status).toBe(200);
-    expect(deleteRes.body.erfolg).toBe(true);
+    const upd = await req('PUT', `/api/events/${second.id}`, {
+      start_time: newStart.toISOString(),
+      end_time: newEnd.toISOString(),
+    }, adminToken);
+    expect(upd.status).toBe(200);
 
-    // Verify all series events are gone
-    const listRes2 = await req('GET', '/api/events?start=2026-05-04T00:00:00.000Z&end=2026-05-25T00:00:00.000Z');
-    const remaining = listRes2.body.termine.filter(t => t.series_id === seriesId);
-    expect(remaining.length).toBe(0);
+    const after = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    expect(after.body.termine).toHaveLength(5);
+    expect(after.body.termine[1].abweichend).toBe(true);
+    expect(after.body.termine[0].abweichend).toBe(false);
+  });
+
+  it('should delete a single event without breaking the series', async () => {
+    const before = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    const victim = before.body.termine[0];
+
+    const del = await req('DELETE', `/api/events/${victim.id}`, null, adminToken);
+    expect(del.status).toBe(200);
+
+    const after = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    expect(after.status).toBe(200);
+    expect(after.body.termine).toHaveLength(4);
+    // The series definition keeps its original period despite the deletion
+    expect(after.body.serie.datumVon).toBe('2026-09-01');
+  });
+
+  it('should apply a new time to every event of the series', async () => {
+    const res = await req('PUT', `/api/events/series/${seriesId}`, {
+      time_from: '17:30',
+      time_to: '19:30',
+    }, adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.serie.zeitVon).toBe('17:30');
+
+    for (const t of res.body.termine) {
+      const start = new Date(t.start);
+      expect(start.getHours()).toBe(17);
+      expect(start.getMinutes()).toBe(30);
+      expect(new Date(t.ende).getHours()).toBe(19);
+      // The previously adjusted event was overwritten too
+      expect(t.abweichend).toBe(false);
+    }
+  });
+
+  it('should rename every event when the series title changes', async () => {
+    const res = await req('PUT', `/api/events/series/${seriesId}`, {
+      title: 'Training Damen',
+    }, adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.termine.every(t => t.titel === 'Training Damen')).toBe(true);
+  });
+
+  it('should delete the series and all its events', async () => {
+    const del = await req('DELETE', `/api/events/series/${seriesId}`, null, adminToken);
+    expect(del.status).toBe(200);
+
+    const after = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    expect(after.status).toBe(404);
+
+      const list = await req('GET', '/api/events?start=2026-09-01T00:00:00.000Z&end=2026-10-01T00:00:00.000Z');
+      expect(list.body.termine.filter(t => t.series_id === seriesId)).toHaveLength(0);
+    });
   });
 });

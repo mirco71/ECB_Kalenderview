@@ -2,6 +2,7 @@ const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
+const { toLocalDateString, toLocalTimeString } = require('./datetime');
 
 let db = null;
 let dbReady = null;
@@ -96,7 +97,9 @@ class DatabaseWrapper {
 
 async function initDatabase() {
   const SQL = await initSqlJs();
-  const dbPath = path.resolve(config.dbPath);
+  // Keep the ':memory:' marker intact — resolving it would turn it into a real
+  // path and defeat the in-memory check in _save() (tests would try to write it).
+  const dbPath = config.dbPath === ':memory:' ? ':memory:' : path.resolve(config.dbPath);
 
   // Ensure data directory exists
   if (dbPath !== ':memory:') {
@@ -122,6 +125,9 @@ async function initDatabase() {
 
   // Run migrations
   migrate();
+
+  // Backfill series records for pre-existing series_id groups
+  backfillSeries();
 
   // Seed categories
   seedCategories();
@@ -169,6 +175,29 @@ function migrate() {
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
   )`);
 
+  // Serien-Definition. Die Einzeltermine einer Serie liegen weiterhin in `events`
+  // und verweisen über events.series_id auf diesen Datensatz. Die Regel separat zu
+  // speichern (statt sie aus den Terminen abzuleiten) ist nötig, weil einzelne
+  // Termine gelöscht und in der Uhrzeit abweichend geändert werden dürfen — der
+  // abgeleitete Zeitraum wäre danach falsch.
+  db.exec(`CREATE TABLE IF NOT EXISTS series (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category_id INTEGER NOT NULL,
+    weekday INTEGER NOT NULL,
+    time_from TEXT NOT NULL,
+    time_to TEXT NOT NULL,
+    date_from TEXT NOT NULL,
+    date_to TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (category_id) REFERENCES categories(id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+
   // Create indexes
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_time)'); } catch(e) {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_events_end ON events(end_time)'); } catch(e) {}
@@ -186,6 +215,63 @@ function migrate() {
     db.exec('ALTER TABLE categories ADD COLUMN group_by_title INTEGER NOT NULL DEFAULT 0');
     db.exec('UPDATE categories SET group_by_title = 1 WHERE id = 5');
   } catch(e) {}
+}
+
+// ============ BACKFILL SERIES ============
+
+/**
+ * Creates a `series` record for every series_id group that predates the series
+ * table (events created through the old repeat_weeks parameter). The definition
+ * is reconstructed from the group's first event; the period spans first to last.
+ * Idempotent — groups that already have a record are skipped.
+ */
+function backfillSeries() {
+  const orphans = db
+    .prepare(
+      `SELECT e.series_id,
+              MIN(e.start_time) AS first_start,
+              MAX(e.start_time) AS last_start
+       FROM events e
+       WHERE e.series_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM series s WHERE s.id = e.series_id)
+       GROUP BY e.series_id`
+    )
+    .all();
+
+  if (orphans.length === 0) return;
+
+  for (const group of orphans) {
+    const first = db
+      .prepare(
+        `SELECT title, category_id, start_time, end_time, description, location, created_by
+         FROM events WHERE series_id = ? ORDER BY start_time ASC`
+      )
+      .get(group.series_id);
+    if (!first) continue;
+
+    const start = new Date(first.start_time);
+    const end = new Date(first.end_time);
+
+    db.prepare(
+      `INSERT INTO series (id, title, category_id, weekday, time_from, time_to,
+                           date_from, date_to, description, location, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      group.series_id,
+      first.title,
+      first.category_id,
+      start.getDay(),
+      toLocalTimeString(start),
+      toLocalTimeString(end),
+      toLocalDateString(start),
+      toLocalDateString(new Date(group.last_start)),
+      first.description || '',
+      first.location || '',
+      first.created_by
+    );
+  }
+
+  console.log(`✅ Backfilled ${orphans.length} series record(s)`);
 }
 
 // ============ SEED CATEGORIES ============

@@ -195,6 +195,10 @@ body {
   grid-template-columns: 1fr;
 }
 
+.form-row.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -329,6 +333,140 @@ body {
 .toast.success { background: #0d904f; }
 .toast.error { background: #c5221f; }
 
+/* ============ MODE SWITCH (Einzel-/Serientermin) ============ */
+
+.mode-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+  color: #555;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.mode-btn:hover { background: #f0f0f0; }
+
+.mode-btn.active {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.series-preview {
+  padding: 10px 12px;
+  margin-bottom: 15px;
+  background: #e8f0fe;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #1a4d8f;
+}
+
+.series-preview.invalid {
+  background: #fce8e6;
+  color: #a71d2a;
+}
+
+/* ============ SERIES ROW IN EVENTS TABLE ============ */
+
+tr.series-row { cursor: pointer; }
+tr.series-row:hover { background: #f0f6ff; }
+
+.series-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #e8f0fe;
+  color: #1a4d8f;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ============ MODAL ============ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+  padding: 20px;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 { font-size: 17px; color: #333; }
+
+.modal-subtitle {
+  font-size: 13px;
+  color: #777;
+  margin-top: 3px;
+}
+
+.modal-section {
+  padding: 16px 20px 0;
+  border-bottom: 1px solid #eee;
+  background: #fafafa;
+}
+
+.modal-body {
+  padding: 0 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid #eee;
+}
+
+.modal-footer small { color: #888; font-size: 12px; }
+
+.data-table.compact td { padding: 6px 8px; }
+.data-table.compact input[type="time"] { padding: 4px 6px; font-size: 13px; }
+
+tr.deviating td { background: #fff8e1; }
+
+.deviating-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #9a6a00;
+  white-space: nowrap;
+}
+
 /* ============ RESPONSIVE ============ */
 
 @media (max-width: 768px) {
@@ -336,10 +474,15 @@ body {
     flex-direction: column;
     gap: 10px;
   }
-  .form-row {
+  .form-row,
+  .form-row.three {
     grid-template-columns: 1fr;
   }
   .admin-tabs {
     overflow-x: auto;
+  }
+  .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

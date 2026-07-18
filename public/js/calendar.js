@@ -6,6 +6,10 @@
 let aktuellesDatum = new Date();
 let startStunde = 6;
 let endStunde = 23;
+// Angemeldete Benutzer (Editor wie Admin) dürfen Termine direkt im Kalender
+// löschen — die API erlaubt beiden Rollen das Löschen.
+let darfBearbeiten = false;
+let termineImBlick = [];
 
 // ============ DATE UTILITIES ============
 
@@ -75,6 +79,7 @@ async function ladeKalender() {
     ende.setDate(ende.getDate() + 7);
 
     const result = await API.getEvents(montag.toISOString(), ende.toISOString());
+    termineImBlick = result.termine;
     zeigeKalender(result);
   } catch (error) {
     zeigeFehler(error.message || error);
@@ -158,6 +163,7 @@ function zeigeKalender(result) {
               <div class="event all-day-inline"
                    style="top: 0; height: ${fullHeight}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
                    title="${escapeHtml(termin.beschreibung || termin.titel)}${termin.series_id ? ' (Wochenserie)' : ''} (Ganztägig)">
+                ${loeschButton(termin)}
                 <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
                 <div class="event-time">Ganztägig</div>
               </div>
@@ -208,6 +214,7 @@ function zeigeKalender(result) {
             <div class="event"
                  style="top: ${topOffset}px; height: ${Math.max(height, 20)}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
                  title="${escapeHtml(termin.beschreibung || termin.titel)}${termin.series_id ? ' (Wochenserie)' : ''}">
+              ${loeschButton(termin)}
               <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
               <div class="event-time">${formatZeit(tStart)} - ${formatZeit(tEnde)}</div>
             </div>
@@ -252,6 +259,42 @@ function erstelleLegende(termine) {
   document.getElementById('legend').innerHTML = html;
 }
 
+// ============ LÖSCHEN IM KALENDER ============
+
+/**
+ * Lösch-Button am Termin — nur für angemeldete Benutzer. Es wird ausschließlich
+ * die numerische ID in den Handler interpoliert; Titel und Serien-ID werden im
+ * Handler aus `termineImBlick` nachgeschlagen, nie in ein HTML-Attribut geschrieben.
+ */
+function loeschButton(termin) {
+  if (!darfBearbeiten) return '';
+  return `<button class="event-delete" title="Termin löschen" onclick="loescheTermin(${termin.id})">🗑️</button>`;
+}
+
+async function loescheTermin(id) {
+  const termin = termineImBlick.find(t => t.id === id);
+  if (!termin) return;
+
+  try {
+    if (termin.series_id) {
+      const nurDieser = confirm(
+        `"${termin.titel}" gehört zu einer Wochenserie.\n\n` +
+        `OK = nur diesen Termin löschen\n` +
+        `Abbrechen = Serie unverändert lassen\n\n` +
+        `(Die ganze Serie löschst du im Admin-Bereich unter Termine.)`
+      );
+      if (!nurDieser) return;
+    } else if (!confirm(`Termin "${termin.titel}" wirklich löschen?`)) {
+      return;
+    }
+
+    await API.deleteEvent(id);
+    await ladeKalender();
+  } catch (error) {
+    alert('Löschen fehlgeschlagen: ' + (error.message || error));
+  }
+}
+
 // ============ ERROR ============
 
 function zeigeFehler(error) {
@@ -275,6 +318,16 @@ function escapeHtml(text) {
 
 // ============ INIT ============
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Token gegen die API prüfen statt nur auf sein Vorhandensein zu vertrauen —
+  // ein abgelaufener Token würde sonst Buttons zeigen, die nur 401 liefern.
+  if (API.isLoggedIn()) {
+    try {
+      await API.me();
+      darfBearbeiten = true;
+    } catch (err) {
+      darfBearbeiten = false;
+    }
+  }
   ladeKalender();
 });

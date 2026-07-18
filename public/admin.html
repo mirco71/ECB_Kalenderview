@@ -35,6 +35,10 @@
           <h3 id="eventFormTitle">Neuen Termin erstellen</h3>
           <form id="eventForm">
             <input type="hidden" id="eventId">
+            <div class="mode-switch" id="eventModeSwitch">
+              <button type="button" class="mode-btn active" data-mode="single" onclick="setEventMode('single')">Einzeltermin</button>
+              <button type="button" class="mode-btn" data-mode="series" onclick="setEventMode('series')">🔁 Serientermin</button>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="eventTitle">Titel *</label>
@@ -45,33 +49,67 @@
                 <select id="eventCategory" required></select>
               </div>
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="eventStart">Start *</label>
-                <input type="datetime-local" id="eventStart" required>
-              </div>
-              <div class="form-group">
-                <label for="eventEnd">Ende *</label>
-                <input type="datetime-local" id="eventEnd" required>
+
+            <!-- Einzeltermin -->
+            <div id="singleFields">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="eventStart">Start *</label>
+                  <input type="datetime-local" id="eventStart">
+                </div>
+                <div class="form-group">
+                  <label for="eventEnd">Ende *</label>
+                  <input type="datetime-local" id="eventEnd">
+                </div>
               </div>
             </div>
+
+            <!-- Serientermin -->
+            <div id="seriesFields" style="display:none">
+              <div class="form-row three">
+                <div class="form-group">
+                  <label for="seriesWeekday">Wochentag *</label>
+                  <select id="seriesWeekday">
+                    <option value="1">Montag</option>
+                    <option value="2">Dienstag</option>
+                    <option value="3">Mittwoch</option>
+                    <option value="4">Donnerstag</option>
+                    <option value="5">Freitag</option>
+                    <option value="6">Samstag</option>
+                    <option value="0">Sonntag</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="seriesTimeFrom">Startzeit *</label>
+                  <input type="time" id="seriesTimeFrom" value="18:00">
+                </div>
+                <div class="form-group">
+                  <label for="seriesTimeTo">Endzeit *</label>
+                  <input type="time" id="seriesTimeTo" value="20:00">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="seriesDateFrom">Serie beginnt am *</label>
+                  <input type="date" id="seriesDateFrom">
+                </div>
+                <div class="form-group">
+                  <label for="seriesDateTo">Serie endet am *</label>
+                  <input type="date" id="seriesDateTo">
+                </div>
+              </div>
+              <div class="series-preview" id="seriesPreview"></div>
+            </div>
+
             <div class="form-row">
               <div class="form-group">
                 <label for="eventLocation">Ort</label>
                 <input type="text" id="eventLocation">
               </div>
-              <div class="form-group checkbox-group">
+              <div class="form-group checkbox-group" id="allDayGroup">
                 <input type="checkbox" id="eventAllDay">
                 <label for="eventAllDay">Ganztägig</label>
               </div>
-            </div>
-            <div class="form-row" id="repeatRow">
-              <div class="form-group">
-                <label for="eventRepeatUntil">Wöchentlich wiederholen bis</label>
-                <input type="date" id="eventRepeatUntil">
-                <small style="color:#888;margin-top:2px">Leer = einmalig, Datum = wöchentliche Serie bis zu diesem Tag</small>
-              </div>
-              <div></div>
             </div>
             <div class="form-row full">
               <div class="form-group">
@@ -106,12 +144,11 @@
               <th>Start</th>
               <th>Ende</th>
               <th>Ganztägig</th>
-              <th>Serie</th>
               <th class="actions">Aktionen</th>
             </tr>
           </thead>
           <tbody id="eventsTableBody">
-            <tr><td colspan="7" style="text-align:center;color:#999">Lade...</td></tr>
+            <tr><td colspan="6" style="text-align:center;color:#999">Lade...</td></tr>
           </tbody>
         </table>
       </div>
@@ -268,6 +305,64 @@
         </table>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ============ SERIEN-DETAIL ============ -->
+  <div class="modal-overlay" id="seriesModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3 id="seriesModalTitle">Serie</h3>
+          <div class="modal-subtitle" id="seriesModalSubtitle"></div>
+        </div>
+        <button class="btn-icon" title="Schließen" onclick="closeSeriesModal()">✕</button>
+      </div>
+
+      <div class="modal-section">
+        <div class="form-row three">
+          <div class="form-group">
+            <label for="seriesEditTitle">Titel (ganze Serie)</label>
+            <input type="text" id="seriesEditTitle">
+          </div>
+          <div class="form-group">
+            <label for="seriesEditTimeFrom">Startzeit (alle)</label>
+            <input type="time" id="seriesEditTimeFrom">
+          </div>
+          <div class="form-group">
+            <label for="seriesEditTimeTo">Endzeit (alle)</label>
+            <input type="time" id="seriesEditTimeTo">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="seriesEditCategory">Kategorie (ganze Serie)</label>
+            <select id="seriesEditCategory"></select>
+          </div>
+          <div class="form-group" style="justify-content:flex-end">
+            <button class="btn btn-primary btn-sm" onclick="saveSeriesHeader()">Für alle Termine übernehmen</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <table class="data-table compact">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Von</th>
+              <th>Bis</th>
+              <th class="actions">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="seriesEventsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-danger btn-sm" onclick="deleteWholeSeries()">Ganze Serie löschen</button>
+        <small>Zeit­änderung in der Liste gilt nur für den einzelnen Termin</small>
+      </div>
     </div>
   </div>
 

@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('eventFilterStart').value = toLocalDate(monday);
   document.getElementById('eventFilterEnd').value = toLocalDate(nextSunday);
 
+  initSeriesForm();
+
   // Load data
   await loadCategories();
   await loadEvents();
@@ -51,6 +53,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initStats();
 });
+
+function initSeriesForm() {
+  const today = new Date();
+  const until = new Date(today);
+  until.setDate(until.getDate() + 7 * 12); // sensible default: a 12-week block
+
+  document.getElementById('seriesWeekday').value = String(today.getDay());
+  document.getElementById('seriesDateFrom').value = toLocalDate(today);
+  document.getElementById('seriesDateTo').value = toLocalDate(until);
+
+  ['seriesWeekday', 'seriesTimeFrom', 'seriesTimeTo', 'seriesDateFrom', 'seriesDateTo']
+    .forEach(id => document.getElementById(id).addEventListener('input', updateSeriesPreview));
+
+  // Click on the backdrop (not the dialog itself) closes the series dialog
+  document.getElementById('seriesModal').addEventListener('click', (e) => {
+    if (e.target.id === 'seriesModal') closeSeriesModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && openSeries) closeSeriesModal();
+  });
+
+  setEventMode('single');
+}
 
 // ============ TAB SWITCHING ============
 
@@ -91,7 +116,12 @@ function getMondayOfWeek(date) {
 }
 
 function toLocalDate(date) {
-  return date.toISOString().split('T')[0];
+  // Deliberately not toISOString() — that converts to UTC and returns the
+  // previous day for times before the UTC offset (e.g. 00:30 CEST).
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function toLocalDatetime(isoString) {
@@ -130,6 +160,8 @@ function hexToRgba(hex, alpha) {
 //  EVENTS
 // ============================================================
 
+const WEEKDAY_ADVERBS = ['sonntags', 'montags', 'dienstags', 'mittwochs', 'donnerstags', 'freitags', 'samstags'];
+
 async function loadEvents() {
   const start = document.getElementById('eventFilterStart').value;
   const end = document.getElementById('eventFilterEnd').value;
@@ -147,68 +179,204 @@ async function loadEvents() {
     const tbody = document.getElementById('eventsTableBody');
 
     if (events.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999">Keine Termine im gewählten Zeitraum</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999">Keine Termine im gewählten Zeitraum</td></tr>';
       return;
     }
 
-    // Only numeric ids are interpolated into the inline handlers; all
-    // user-controlled strings are looked up from `events` inside the handler,
-    // never injected into HTML attributes.
-    tbody.innerHTML = events.map(t => `
-      <tr>
-        <td>${escapeHtml(t.titel)}</td>
-        <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
-        <td>${formatDatetime(new Date(t.start).toISOString())}</td>
-        <td>${formatDatetime(new Date(t.ende).toISOString())}</td>
-        <td>${t.ganztaegig ? '✅' : ''}</td>
-        <td>${t.series_id ? '🔁' : ''}</td>
-        <td class="actions">
-          <button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
-          <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>
-        </td>
-      </tr>
-    `).join('');
+    // A series collapses into a single row (first occurrence in range decides
+    // the position); single events render as before.
+    const rows = [];
+    const seenSeries = new Set();
+
+    for (const t of events) {
+      if (t.series_id) {
+        if (seenSeries.has(t.series_id)) continue;
+        seenSeries.add(t.series_id);
+        rows.push(renderSeriesRow(t));
+      } else {
+        rows.push(renderEventRow(t));
+      }
+    }
+
+    tbody.innerHTML = rows.join('');
   } catch (err) {
     showToast('Fehler beim Laden: ' + err.message, 'error');
   }
+}
+
+// Only numeric ids / the series UUID are interpolated into the inline handlers;
+// all user-controlled strings are looked up from `events` inside the handler,
+// never injected into HTML attributes.
+function renderEventRow(t) {
+  return `
+    <tr>
+      <td>${escapeHtml(t.titel)}</td>
+      <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
+      <td>${formatDatetime(new Date(t.start).toISOString())}</td>
+      <td>${formatDatetime(new Date(t.ende).toISOString())}</td>
+      <td>${t.ganztaegig ? '✅' : ''}</td>
+      <td class="actions">
+        <button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
+        <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderSeriesRow(t) {
+  const s = t.serie;
+  const rhythm = s
+    ? `${WEEKDAY_ADVERBS[s.wochentag]} ${s.zeitVon}–${s.zeitBis} Uhr`
+    : 'Serie';
+  const period = s ? `${formatDatum(s.datumVon)} – ${formatDatum(s.datumBis)}` : '';
+  const count = s ? `${s.anzahl} Termine` : '';
+
+  return `
+    <tr class="series-row" onclick="openSeriesModal('${escapeHtml(t.series_id)}')">
+      <td>🔁 ${escapeHtml(t.titel)}<span class="series-badge">${escapeHtml(count)}</span></td>
+      <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
+      <td colspan="2">${escapeHtml(rhythm)} · ${escapeHtml(period)}</td>
+      <td></td>
+      <td class="actions">
+        <button class="btn-icon" title="Serie öffnen" onclick="event.stopPropagation();openSeriesModal('${escapeHtml(t.series_id)}')">📂</button>
+      </td>
+    </tr>
+  `;
+}
+
+// ============ EINZEL- / SERIENTERMIN ============
+
+let eventMode = 'single';
+
+function setEventMode(mode) {
+  eventMode = mode;
+  const isSeries = mode === 'series';
+
+  document.getElementById('singleFields').style.display = isSeries ? 'none' : '';
+  document.getElementById('seriesFields').style.display = isSeries ? '' : 'none';
+  document.getElementById('allDayGroup').style.display = isSeries ? 'none' : '';
+  document.querySelectorAll('#eventModeSwitch .mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.getElementById('eventSubmitBtn').textContent =
+    isSeries ? 'Serie erstellen' : 'Termin erstellen';
+
+  // required only applies to the fields of the active mode, otherwise the
+  // browser blocks submit on hidden inputs it cannot focus.
+  document.getElementById('eventStart').required = !isSeries;
+  document.getElementById('eventEnd').required = !isSeries;
+  ['seriesTimeFrom', 'seriesTimeTo', 'seriesDateFrom', 'seriesDateTo'].forEach(id => {
+    document.getElementById(id).required = isSeries;
+  });
+
+  if (isSeries) updateSeriesPreview();
+}
+
+/**
+ * Live preview of what the series will produce. This is the whole point of the
+ * explicit series mode — the old form silently rounded a "repeat until" date
+ * into a week count and the user only saw the result after saving.
+ */
+function updateSeriesPreview() {
+  const box = document.getElementById('seriesPreview');
+  const weekday = parseInt(document.getElementById('seriesWeekday').value);
+  const timeFrom = document.getElementById('seriesTimeFrom').value;
+  const timeTo = document.getElementById('seriesTimeTo').value;
+  const dateFrom = document.getElementById('seriesDateFrom').value;
+  const dateTo = document.getElementById('seriesDateTo').value;
+
+  if (!dateFrom || !dateTo || !timeFrom || !timeTo) {
+    box.className = 'series-preview';
+    box.textContent = 'Bitte Zeitraum und Uhrzeiten ausfüllen.';
+    return;
+  }
+  if (timeTo <= timeFrom) {
+    box.className = 'series-preview invalid';
+    box.textContent = 'Die Endzeit muss nach der Startzeit liegen.';
+    return;
+  }
+  if (dateTo < dateFrom) {
+    box.className = 'series-preview invalid';
+    box.textContent = 'Das Enddatum muss nach dem Startdatum liegen.';
+    return;
+  }
+
+  const dates = seriesOccurrences(weekday, dateFrom, dateTo);
+  if (dates.length === 0) {
+    box.className = 'series-preview invalid';
+    box.textContent = `Im gewählten Zeitraum liegt kein ${WEEKDAY_NAMES[weekday]}.`;
+    return;
+  }
+
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  box.className = 'series-preview';
+  box.textContent =
+    `${dates.length} Termine · ${WEEKDAY_ADVERBS[weekday]} ${timeFrom}–${timeTo} Uhr · ` +
+    `erster ${formatDatumShort(first)}, letzter ${formatDatumShort(last)}`;
+}
+
+const WEEKDAY_NAMES = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+/** Mirrors generateSeriesDates() on the server — preview only, the server decides. */
+function seriesOccurrences(weekday, dateFrom, dateTo) {
+  const [fy, fm, fd] = dateFrom.split('-').map(Number);
+  const cursor = new Date(fy, fm - 1, fd);
+  cursor.setDate(cursor.getDate() + ((weekday - cursor.getDay()) + 7) % 7);
+
+  const [ty, tm, td] = dateTo.split('-').map(Number);
+  const last = new Date(ty, tm - 1, td, 23, 59);
+
+  const dates = [];
+  while (cursor <= last && dates.length < 200) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return dates;
+}
+
+function formatDatumShort(date) {
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 document.getElementById('eventForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const id = document.getElementById('eventId').value;
-  const data = {
-    title: document.getElementById('eventTitle').value,
-    category_id: parseInt(document.getElementById('eventCategory').value),
-    start_time: new Date(document.getElementById('eventStart').value).toISOString(),
-    end_time: new Date(document.getElementById('eventEnd').value).toISOString(),
-    all_day: document.getElementById('eventAllDay').checked,
-    description: document.getElementById('eventDescription').value,
-    location: document.getElementById('eventLocation').value,
-  };
+  const title = document.getElementById('eventTitle').value;
+  const categoryId = parseInt(document.getElementById('eventCategory').value);
+  const description = document.getElementById('eventDescription').value;
+  const location = document.getElementById('eventLocation').value;
 
   try {
-    if (id) {
-      await API.updateEvent(id, data);
-      showToast('Termin aktualisiert');
+    if (eventMode === 'series' && !id) {
+      const result = await API.createSeries({
+        title,
+        category_id: categoryId,
+        weekday: parseInt(document.getElementById('seriesWeekday').value),
+        time_from: document.getElementById('seriesTimeFrom').value,
+        time_to: document.getElementById('seriesTimeTo').value,
+        date_from: document.getElementById('seriesDateFrom').value,
+        date_to: document.getElementById('seriesDateTo').value,
+        description,
+        location,
+      });
+      showToast(`${result.serie.anzahl} Termine erstellt`);
     } else {
-      const repeatUntil = document.getElementById('eventRepeatUntil').value;
-      if (repeatUntil) {
-        const startDate = new Date(document.getElementById('eventStart').value);
-        const untilDate = new Date(repeatUntil);
-        if (untilDate <= startDate) {
-          showToast('Enddatum der Wiederholung muss nach dem Startdatum liegen', 'error');
-          return;
-        }
-        const diffMs = untilDate.getTime() - startDate.getTime();
-        const diffWeeks = Math.ceil(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
-        const repeatWeeks = Math.min(Math.max(diffWeeks, 2), 52);
-        data.repeat_weeks = repeatWeeks;
-      }
-      const result = await API.createEvent(data);
-      if (result.count && result.count > 1) {
-        showToast(`${result.count} Termine erstellt (Wochenserie)`);
+      const data = {
+        title,
+        category_id: categoryId,
+        start_time: new Date(document.getElementById('eventStart').value).toISOString(),
+        end_time: new Date(document.getElementById('eventEnd').value).toISOString(),
+        all_day: document.getElementById('eventAllDay').checked,
+        description,
+        location,
+      };
+      if (id) {
+        await API.updateEvent(id, data);
+        showToast('Termin aktualisiert');
       } else {
+        await API.createEvent(data);
         showToast('Termin erstellt');
       }
     }
@@ -223,6 +391,10 @@ async function editEvent(id) {
   try {
     const t = await API.request('GET', `/api/events/${id}`);
 
+    // Editing always works on a single event — a series is managed in its own dialog.
+    setEventMode('single');
+    document.getElementById('eventModeSwitch').style.display = 'none';
+
     document.getElementById('eventId').value = t.id;
     document.getElementById('eventTitle').value = t.titel;
     document.getElementById('eventCategory').value = t.farbe; // category_id as string
@@ -235,7 +407,6 @@ async function editEvent(id) {
     document.getElementById('eventFormTitle').textContent = 'Termin bearbeiten';
     document.getElementById('eventSubmitBtn').textContent = 'Termin aktualisieren';
     document.getElementById('eventCancelBtn').style.display = '';
-    document.getElementById('repeatRow').style.display = 'none';
 
     document.getElementById('eventFormSection').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
@@ -245,55 +416,192 @@ async function editEvent(id) {
 
 async function deleteEvent(id) {
   const event = events.find(e => e.id === id);
-  if (!event) return;
-  const title = event.titel;
-  const seriesId = event.series_id;
+  const title = event ? event.titel : '';
+  if (!confirm(`Termin "${title}" wirklich löschen?`)) return;
 
-  if (seriesId) {
-    const choice = prompt(
-      `Termin "${title}" gehört zu einer Serie.\n\n` +
-      `Eingabe:\n` +
-      `  1 = Nur diesen Termin löschen\n` +
-      `  2 = Ganze Serie löschen\n` +
-      `  (Abbrechen = nichts tun)`
-    );
-    if (choice === '1') {
-      try {
-        await API.deleteEvent(id);
-        showToast('Termin gelöscht');
-        await loadEvents();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    } else if (choice === '2') {
-      try {
-        await API.deleteEventSeries(seriesId);
-        showToast('Terminserie gelöscht');
-        await loadEvents();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    }
-  } else {
-    if (!confirm(`Termin "${title}" wirklich löschen?`)) return;
-    try {
-      await API.deleteEvent(id);
-      showToast('Termin gelöscht');
-      await loadEvents();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+  try {
+    await API.deleteEvent(id);
+    showToast('Termin gelöscht');
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
   }
 }
 
 function resetEventForm() {
   document.getElementById('eventForm').reset();
   document.getElementById('eventId').value = '';
-  document.getElementById('eventRepeatUntil').value = '';
-  document.getElementById('repeatRow').style.display = '';
+  document.getElementById('eventModeSwitch').style.display = '';
   document.getElementById('eventFormTitle').textContent = 'Neuen Termin erstellen';
-  document.getElementById('eventSubmitBtn').textContent = 'Termin erstellen';
   document.getElementById('eventCancelBtn').style.display = 'none';
+  setEventMode('single');
+}
+
+// ============ SERIEN-DETAIL ============
+
+let openSeries = null;
+
+async function openSeriesModal(seriesId) {
+  try {
+    openSeries = await API.getSeries(seriesId);
+    renderSeriesModal();
+    document.getElementById('seriesModal').style.display = '';
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function closeSeriesModal() {
+  document.getElementById('seriesModal').style.display = 'none';
+  openSeries = null;
+}
+
+function renderSeriesModal() {
+  const { serie, termine } = openSeries;
+
+  document.getElementById('seriesModalTitle').textContent = serie.titel;
+  document.getElementById('seriesModalSubtitle').textContent =
+    `${WEEKDAY_ADVERBS[serie.wochentag]} ${serie.zeitVon}–${serie.zeitBis} Uhr · ` +
+    `${formatDatum(serie.datumVon)} – ${formatDatum(serie.datumBis)} · ${serie.anzahl} Termine`;
+
+  document.getElementById('seriesEditTitle').value = serie.titel;
+  document.getElementById('seriesEditTimeFrom').value = serie.zeitVon;
+  document.getElementById('seriesEditTimeTo').value = serie.zeitBis;
+
+  const catSelect = document.getElementById('seriesEditCategory');
+  catSelect.innerHTML = categories.map(c =>
+    `<option value="${c.id}">${escapeHtml(c.name)}</option>`
+  ).join('');
+  catSelect.value = serie.category_id;
+
+  document.getElementById('seriesEventsBody').innerHTML = termine.map(t => {
+    const start = new Date(t.start);
+    const end = new Date(t.ende);
+    return `
+      <tr class="${t.abweichend ? 'deviating' : ''}">
+        <td>${escapeHtml(formatWeekdayDate(start))}${t.abweichend ? '<span class="deviating-badge">abweichend</span>' : ''}</td>
+        <td><input type="time" value="${escapeHtml(toTimeValue(start))}" onchange="updateOccurrenceTime(${t.id}, this.value, null)"></td>
+        <td><input type="time" value="${escapeHtml(toTimeValue(end))}" onchange="updateOccurrenceTime(${t.id}, null, this.value)"></td>
+        <td class="actions">
+          <button class="btn-icon" title="Diesen Termin löschen" onclick="deleteOccurrence(${t.id})">🗑️</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function formatWeekdayDate(date) {
+  return date.toLocaleDateString('de-DE', {
+    weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+}
+
+function toTimeValue(date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Changes the time of a single occurrence. The date is kept and only the
+ * wall-clock time replaced, so the event stays on its day of the series.
+ */
+async function updateOccurrenceTime(eventId, newFrom, newTo) {
+  const t = openSeries.termine.find(x => x.id === eventId);
+  if (!t) return;
+
+  const start = new Date(t.start);
+  const end = new Date(t.ende);
+
+  if (newFrom) {
+    const [h, m] = newFrom.split(':').map(Number);
+    start.setHours(h, m, 0, 0);
+  }
+  if (newTo) {
+    const [h, m] = newTo.split(':').map(Number);
+    end.setHours(h, m, 0, 0);
+  }
+
+  if (end <= start) {
+    showToast('Endzeit muss nach Startzeit liegen', 'error');
+    renderSeriesModal();
+    return;
+  }
+
+  try {
+    await API.updateEvent(eventId, {
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+    });
+    showToast('Termin angepasst');
+    openSeries = await API.getSeries(openSeries.serie.id);
+    renderSeriesModal();
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
+    renderSeriesModal();
+  }
+}
+
+async function deleteOccurrence(eventId) {
+  const t = openSeries.termine.find(x => x.id === eventId);
+  if (!t) return;
+  if (!confirm(`Termin am ${formatWeekdayDate(new Date(t.start))} löschen?\n\nDie übrigen Termine der Serie bleiben bestehen.`)) return;
+
+  try {
+    await API.deleteEvent(eventId);
+    showToast('Termin gelöscht');
+    openSeries = await API.getSeries(openSeries.serie.id);
+    renderSeriesModal();
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function saveSeriesHeader() {
+  const serie = openSeries.serie;
+  const newFrom = document.getElementById('seriesEditTimeFrom').value;
+  const newTo = document.getElementById('seriesEditTimeTo').value;
+  const timeChanged = newFrom !== serie.zeitVon || newTo !== serie.zeitBis;
+  const deviating = openSeries.termine.filter(t => t.abweichend).length;
+
+  if (timeChanged && deviating > 0) {
+    const ok = confirm(
+      `${deviating} Termin(e) dieser Serie haben eine abweichende Uhrzeit.\n\n` +
+      `Beim Übernehmen werden sie auf ${newFrom}–${newTo} Uhr zurückgesetzt.\n\nFortfahren?`
+    );
+    if (!ok) return;
+  }
+
+  try {
+    const data = {
+      title: document.getElementById('seriesEditTitle').value,
+      category_id: parseInt(document.getElementById('seriesEditCategory').value),
+    };
+    if (timeChanged) {
+      data.time_from = newFrom;
+      data.time_to = newTo;
+    }
+    openSeries = await API.updateSeries(serie.id, data);
+    showToast('Serie aktualisiert');
+    renderSeriesModal();
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteWholeSeries() {
+  const serie = openSeries.serie;
+  if (!confirm(`Die ganze Serie "${serie.titel}" mit ${serie.anzahl} Terminen löschen?`)) return;
+
+  try {
+    await API.deleteEventSeries(serie.id);
+    showToast('Terminserie gelöscht');
+    closeSeriesModal();
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 // ============================================================
@@ -542,8 +850,9 @@ function setStatsRange(monthOffset) {
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const last = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0);
-  document.getElementById('statsStart').value = toLocalDate(new Date(first.getTime() - first.getTimezoneOffset() * 60000));
-  document.getElementById('statsEnd').value = toLocalDate(new Date(last.getTime() - last.getTimezoneOffset() * 60000));
+  // toLocalDate is timezone-correct, so no offset compensation is needed here
+  document.getElementById('statsStart').value = toLocalDate(first);
+  document.getElementById('statsEnd').value = toLocalDate(last);
 }
 
 function formatDauer(minuten) {

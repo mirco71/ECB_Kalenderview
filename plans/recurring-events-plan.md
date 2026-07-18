@@ -1,5 +1,10 @@
 # Plan: Weekly Recurring Events in Admin UI
 
+> **Überholt.** Dieser Plan beschreibt die erste, `repeat_weeks`-basierte
+> Umsetzung. Sie wurde durch [serientermine-plan.md](serientermine-plan.md)
+> ersetzt (eigene `series`-Tabelle, explizite Serien-Eingabe, Serienansicht).
+> Nur noch als Historie relevant.
+
 ## Problem Statement
 
 The backend already supports creating weekly recurring events via the `repeat_weeks` parameter on `POST /api/events`, but the admin UI has no way to set this value. Additionally, there is no UI for managing event series — e.g. viewing which events belong to a series, or deleting an entire series at once.

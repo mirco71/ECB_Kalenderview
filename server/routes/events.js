@@ -4,8 +4,31 @@ const { body, query, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const config = require('../config');
 const { requireAuth } = require('../middleware/auth');
+const {
+  toLocalDateString,
+  toLocalTimeString,
+  localDateTime,
+  generateSeriesDates,
+  MAX_SERIES_EVENTS,
+} = require('../datetime');
 
 const router = express.Router();
+
+// Events carry their series definition along (LEFT JOIN — null for single events),
+// so the admin list can group a series into one row without extra requests.
+const EVENT_BASE = `SELECT e.*, c.name as category_name, c.color_hex as category_color,
+                           c.color_bg as category_color_bg,
+                           s.weekday as series_weekday, s.time_from as series_time_from,
+                           s.time_to as series_time_to, s.date_from as series_date_from,
+                           s.date_to as series_date_to,
+                           (SELECT COUNT(*) FROM events e2 WHERE e2.series_id = e.series_id) as series_count
+                    FROM events e
+                    JOIN categories c ON e.category_id = c.id
+                    LEFT JOIN series s ON e.series_id = s.id`;
+const EVENT_SELECT = `${EVENT_BASE} WHERE e.id = ?`;
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/events?start=ISO&end=ISO
 router.get(
@@ -24,14 +47,7 @@ router.get(
     const db = getDb();
 
     const events = db
-      .prepare(
-        `SELECT e.*, c.name as category_name, c.color_hex as category_color, 
-                c.color_bg as category_color_bg
-         FROM events e
-         JOIN categories c ON e.category_id = c.id
-         WHERE e.start_time < ? AND e.end_time > ?
-         ORDER BY e.start_time ASC`
-      )
+      .prepare(`${EVENT_BASE} WHERE e.start_time < ? AND e.end_time > ? ORDER BY e.start_time ASC`)
       .all(end, start);
 
     res.json({
@@ -52,15 +68,7 @@ router.get('/:id', param('id').isInt(), (req, res) => {
   }
 
   const db = getDb();
-  const event = db
-    .prepare(
-      `SELECT e.*, c.name as category_name, c.color_hex as category_color,
-              c.color_bg as category_color_bg
-       FROM events e
-       JOIN categories c ON e.category_id = c.id
-       WHERE e.id = ?`
-    )
-    .get(parseInt(req.params.id));
+  const event = db.prepare(EVENT_SELECT).get(parseInt(req.params.id));
 
   if (!event) {
     return res.status(404).json({ error: 'Termin nicht gefunden' });
@@ -69,8 +77,7 @@ router.get('/:id', param('id').isInt(), (req, res) => {
   res.json(mapEventToTermin(event));
 });
 
-// POST /api/events
-// Supports optional repeat_weeks parameter to create a weekly series
+// POST /api/events — single event only. Series are created via POST /api/events/series.
 router.post(
   '/',
   requireAuth,
@@ -82,7 +89,6 @@ router.post(
     body('all_day').optional().isBoolean(),
     body('description').optional().trim(),
     body('location').optional().trim(),
-    body('repeat_weeks').optional().isInt({ min: 1, max: 52 }).withMessage('Wiederholungen: 1-52 Wochen'),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -90,7 +96,7 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
-    const { title, start_time, end_time, category_id, all_day, description, location, repeat_weeks } = req.body;
+    const { title, start_time, end_time, category_id, all_day, description, location } = req.body;
     const db = getDb();
 
     // Validate that end_time is after start_time
@@ -104,56 +110,24 @@ router.post(
       return res.status(400).json({ error: 'Kategorie nicht gefunden' });
     }
 
-    const weeks = parseInt(repeat_weeks) || 1;
-    const seriesId = weeks > 1 ? crypto.randomUUID() : null;
-    const createdEvents = [];
+    const result = db
+      .prepare(
+        `INSERT INTO events (title, start_time, end_time, category_id, all_day, description, location, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        title,
+        new Date(start_time).toISOString(),
+        new Date(end_time).toISOString(),
+        parseInt(category_id),
+        all_day ? 1 : 0,
+        description || '',
+        location || '',
+        req.user.id
+      );
 
-    for (let i = 0; i < weeks; i++) {
-      const startDate = new Date(start_time);
-      const endDate = new Date(end_time);
-      startDate.setDate(startDate.getDate() + (i * 7));
-      endDate.setDate(endDate.getDate() + (i * 7));
-
-      const result = db
-        .prepare(
-          `INSERT INTO events (title, start_time, end_time, category_id, all_day, description, location, series_id, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          title,
-          startDate.toISOString(),
-          endDate.toISOString(),
-          parseInt(category_id),
-          all_day ? 1 : 0,
-          description || '',
-          location || '',
-          seriesId,
-          req.user.id
-        );
-
-      const event = db
-        .prepare(
-          `SELECT e.*, c.name as category_name, c.color_hex as category_color,
-                  c.color_bg as category_color_bg
-           FROM events e
-           JOIN categories c ON e.category_id = c.id
-           WHERE e.id = ?`
-        )
-        .get(result.lastInsertRowid);
-
-      createdEvents.push(mapEventToTermin(event));
-    }
-
-    if (weeks === 1) {
-      res.status(201).json(createdEvents[0]);
-    } else {
-      res.status(201).json({
-        message: `${weeks} Termine erstellt (Wochenserie)`,
-        series_id: seriesId,
-        count: createdEvents.length,
-        termine: createdEvents,
-      });
-    }
+    const event = db.prepare(EVENT_SELECT).get(result.lastInsertRowid);
+    res.status(201).json(mapEventToTermin(event));
   }
 );
 
@@ -221,16 +195,7 @@ router.put(
       parseInt(req.params.id)
     );
 
-    const event = db
-      .prepare(
-        `SELECT e.*, c.name as category_name, c.color_hex as category_color,
-                c.color_bg as category_color_bg
-         FROM events e
-         JOIN categories c ON e.category_id = c.id
-         WHERE e.id = ?`
-      )
-      .get(parseInt(req.params.id));
-
+    const event = db.prepare(EVENT_SELECT).get(parseInt(req.params.id));
     res.json(mapEventToTermin(event));
   }
 );
@@ -252,24 +217,250 @@ router.delete('/:id', requireAuth, param('id').isInt(), (req, res) => {
   res.json({ erfolg: true, message: 'Termin gelöscht' });
 });
 
-// DELETE /api/events/series/:seriesId — delete all events in a series
-router.delete('/series/:seriesId', requireAuth, (req, res) => {
-  const seriesId = req.params.seriesId;
-  if (!seriesId) {
-    return res.status(400).json({ error: 'Series-ID erforderlich' });
-  }
+// ============ SERIES ============
+// Note: all series routes have two path segments (/series/...) except POST /series,
+// so none of them collide with the single-event /:id routes above.
 
+// POST /api/events/series — create a weekly series and all its events
+router.post(
+  '/series',
+  requireAuth,
+  [
+    body('title').trim().notEmpty().withMessage('Titel erforderlich'),
+    body('category_id').isInt({ min: 1 }).withMessage('Kategorie erforderlich'),
+    body('weekday').isInt({ min: 0, max: 6 }).withMessage('Wochentag erforderlich'),
+    body('time_from').matches(TIME_PATTERN).withMessage('Ungültige Startzeit (z.B. 18:00)'),
+    body('time_to').matches(TIME_PATTERN).withMessage('Ungültige Endzeit (z.B. 20:00)'),
+    body('date_from').matches(DATE_PATTERN).withMessage('Ungültiges Startdatum'),
+    body('date_to').matches(DATE_PATTERN).withMessage('Ungültiges Enddatum'),
+    body('description').optional().trim(),
+    body('location').optional().trim(),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { title, category_id, weekday, time_from, time_to, date_from, date_to,
+            description, location } = req.body;
+    const db = getDb();
+
+    if (time_to <= time_from) {
+      return res.status(400).json({ error: 'Endzeit muss nach Startzeit liegen' });
+    }
+    if (date_to < date_from) {
+      return res.status(400).json({ error: 'Das Enddatum muss nach dem Startdatum liegen' });
+    }
+
+    const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(parseInt(category_id));
+    if (!category) {
+      return res.status(400).json({ error: 'Kategorie nicht gefunden' });
+    }
+
+    const occurrences = generateSeriesDates(parseInt(weekday), date_from, date_to, time_from, time_to);
+    if (occurrences.length === 0) {
+      return res.status(400).json({
+        error: 'Im gewählten Zeitraum liegt kein einziger Termin dieses Wochentags',
+      });
+    }
+    if (occurrences.length >= MAX_SERIES_EVENTS) {
+      return res.status(400).json({
+        error: `Zeitraum zu lang — maximal ${MAX_SERIES_EVENTS} Termine pro Serie`,
+      });
+    }
+
+    const seriesId = crypto.randomUUID();
+
+    // Store the actual first/last occurrence rather than the requested search
+    // bounds — otherwise a series starting "from 18.07." would display that date
+    // even though its first event falls on the 21st.
+    const actualFrom = toLocalDateString(occurrences[0].start);
+    const actualTo = toLocalDateString(occurrences[occurrences.length - 1].start);
+
+    db.prepare(
+      `INSERT INTO series (id, title, category_id, weekday, time_from, time_to,
+                           date_from, date_to, description, location, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      seriesId, title, parseInt(category_id), parseInt(weekday), time_from, time_to,
+      actualFrom, actualTo, description || '', location || '', req.user.id
+    );
+
+    for (const occ of occurrences) {
+      db.prepare(
+        `INSERT INTO events (title, start_time, end_time, category_id, all_day,
+                             description, location, series_id, created_by)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`
+      ).run(
+        title, occ.start.toISOString(), occ.end.toISOString(), parseInt(category_id),
+        description || '', location || '', seriesId, req.user.id
+      );
+    }
+
+    res.status(201).json({
+      erfolg: true,
+      message: `${occurrences.length} Termine erstellt`,
+      ...loadSeries(db, seriesId),
+    });
+  }
+);
+
+// GET /api/events/series/:seriesId — series definition plus all its events
+router.get('/series/:seriesId', requireAuth, (req, res) => {
   const db = getDb();
+  const data = loadSeries(db, req.params.seriesId);
+  if (!data) {
+    return res.status(404).json({ error: 'Terminserie nicht gefunden' });
+  }
+  res.json(data);
+});
+
+// PUT /api/events/series/:seriesId — update the whole series
+// title/category always apply to every event; time_from/time_to only when sent,
+// and they overwrite individually adjusted events (the UI warns about this).
+router.put(
+  '/series/:seriesId',
+  requireAuth,
+  [
+    body('title').optional().trim().notEmpty().withMessage('Titel darf nicht leer sein'),
+    body('category_id').optional().isInt({ min: 1 }),
+    body('time_from').optional().matches(TIME_PATTERN).withMessage('Ungültige Startzeit (z.B. 18:00)'),
+    body('time_to').optional().matches(TIME_PATTERN).withMessage('Ungültige Endzeit (z.B. 20:00)'),
+    body('description').optional().trim(),
+    body('location').optional().trim(),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const db = getDb();
+    const seriesId = req.params.seriesId;
+    const existing = db.prepare('SELECT * FROM series WHERE id = ?').get(seriesId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Terminserie nicht gefunden' });
+    }
+
+    const updates = {
+      title: req.body.title ?? existing.title,
+      category_id: req.body.category_id != null ? parseInt(req.body.category_id) : existing.category_id,
+      time_from: req.body.time_from ?? existing.time_from,
+      time_to: req.body.time_to ?? existing.time_to,
+      description: req.body.description ?? existing.description,
+      location: req.body.location ?? existing.location,
+    };
+
+    if (updates.time_to <= updates.time_from) {
+      return res.status(400).json({ error: 'Endzeit muss nach Startzeit liegen' });
+    }
+
+    if (req.body.category_id != null) {
+      const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(updates.category_id);
+      if (!category) {
+        return res.status(400).json({ error: 'Kategorie nicht gefunden' });
+      }
+    }
+
+    db.prepare(
+      `UPDATE series SET title = ?, category_id = ?, time_from = ?, time_to = ?,
+       description = ?, location = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(
+      updates.title, updates.category_id, updates.time_from, updates.time_to,
+      updates.description, updates.location, seriesId
+    );
+
+    db.prepare(
+      `UPDATE events SET title = ?, category_id = ?, description = ?, location = ?,
+       updated_at = datetime('now') WHERE series_id = ?`
+    ).run(updates.title, updates.category_id, updates.description, updates.location, seriesId);
+
+    // Rewriting the times means recomputing each event's timestamps from its own
+    // date, so the series keeps its wall-clock time across a DST change.
+    const timeChanged = (req.body.time_from != null && req.body.time_from !== existing.time_from) ||
+                        (req.body.time_to != null && req.body.time_to !== existing.time_to);
+    if (timeChanged) {
+      const events = db
+        .prepare('SELECT id, start_time FROM events WHERE series_id = ?')
+        .all(seriesId);
+
+      for (const ev of events) {
+        const day = toLocalDateString(new Date(ev.start_time));
+        const start = localDateTime(day, updates.time_from);
+        const end = localDateTime(day, updates.time_to);
+        db.prepare(
+          `UPDATE events SET start_time = ?, end_time = ?, updated_at = datetime('now') WHERE id = ?`
+        ).run(start.toISOString(), end.toISOString(), ev.id);
+      }
+    }
+
+    res.json({ erfolg: true, ...loadSeries(db, seriesId) });
+  }
+);
+
+// DELETE /api/events/series/:seriesId — delete the series and all its events
+router.delete('/series/:seriesId', requireAuth, (req, res) => {
+  const db = getDb();
+  const seriesId = req.params.seriesId;
+
   const count = db.prepare('SELECT COUNT(*) as count FROM events WHERE series_id = ?').get(seriesId);
-  if (!count || count.count === 0) {
+  const series = db.prepare('SELECT id FROM series WHERE id = ?').get(seriesId);
+  if ((!count || count.count === 0) && !series) {
     return res.status(404).json({ error: 'Terminserie nicht gefunden' });
   }
 
   db.prepare('DELETE FROM events WHERE series_id = ?').run(seriesId);
+  db.prepare('DELETE FROM series WHERE id = ?').run(seriesId);
   res.json({ erfolg: true, message: `${count.count} Termine der Serie gelöscht` });
 });
 
 // ============ HELPER ============
+
+/**
+ * Loads a series definition together with its events. Each event carries an
+ * `abweichend` flag: true when its wall-clock time differs from the series
+ * definition (an individually adjusted occurrence).
+ */
+function loadSeries(db, seriesId) {
+  const series = db
+    .prepare(
+      `SELECT s.*, c.name as category_name, c.color_hex as category_color
+       FROM series s
+       JOIN categories c ON s.category_id = c.id
+       WHERE s.id = ?`
+    )
+    .get(seriesId);
+  if (!series) return null;
+
+  const events = db
+    .prepare(`${EVENT_BASE} WHERE e.series_id = ? ORDER BY e.start_time ASC`)
+    .all(seriesId);
+
+  return {
+    serie: {
+      id: series.id,
+      titel: series.title,
+      category_id: series.category_id,
+      farbName: series.category_name,
+      farbHex: series.category_color,
+      wochentag: series.weekday,
+      zeitVon: series.time_from,
+      zeitBis: series.time_to,
+      datumVon: series.date_from,
+      datumBis: series.date_to,
+      beschreibung: series.description || '',
+      ort: series.location || '',
+      anzahl: events.length,
+    },
+    termine: events.map(row => ({
+      ...mapEventToTermin(row),
+      abweichend:
+        toLocalTimeString(new Date(row.start_time)) !== series.time_from ||
+        toLocalTimeString(new Date(row.end_time)) !== series.time_to,
+    })),
+  };
+}
 
 function mapEventToTermin(row) {
   return {
@@ -285,6 +476,17 @@ function mapEventToTermin(row) {
     beschreibung: row.description || '',
     ort: row.location || '',
     series_id: row.series_id || null,
+    // Present only for events that belong to a series (see EVENT_BASE join).
+    serie: row.series_id && row.series_weekday != null
+      ? {
+          wochentag: row.series_weekday,
+          zeitVon: row.series_time_from,
+          zeitBis: row.series_time_to,
+          datumVon: row.series_date_from,
+          datumBis: row.series_date_to,
+          anzahl: row.series_count,
+        }
+      : null,
     created_by: row.created_by,
   };
 }

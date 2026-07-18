@@ -11,6 +11,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       DB_PATH: /app/data/calendar.db
+      # Pflicht für Serientermine — siehe Kommentar im Dockerfile
+      TZ: ${TZ:-Europe/Berlin}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET muss als Stack-Umgebungsvariable in Portainer gesetzt werden}
       CALENDAR_NAME: ${CALENDAR_NAME:-Eisbelegung Eissporthalle Solingen}
       START_HOUR: ${START_HOUR:-6}
