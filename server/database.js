@@ -148,7 +148,8 @@ function migrate() {
     name TEXT UNIQUE NOT NULL,
     color_hex TEXT NOT NULL,
     color_bg TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    group_by_title INTEGER NOT NULL DEFAULT 0
   )`);
 
   db.exec(`CREATE TABLE IF NOT EXISTS events (
@@ -176,6 +177,15 @@ function migrate() {
 
   // Migration: add series_id column if missing (for existing databases)
   try { db.exec('ALTER TABLE events ADD COLUMN series_id TEXT DEFAULT NULL'); } catch(e) {}
+
+  // Migration: add group_by_title flag to categories (for existing databases).
+  // Steuert, ob eine Kategorie in der Abrechnung zusätzlich nach Termin-Titel
+  // aufgeschlüsselt wird. Der ALTER schlägt beim zweiten Lauf fehl, deshalb wird
+  // der Erst-Default (Hobbies, wie im alten Abrechnungs-Tool) im selben try gesetzt.
+  try {
+    db.exec('ALTER TABLE categories ADD COLUMN group_by_title INTEGER NOT NULL DEFAULT 0');
+    db.exec('UPDATE categories SET group_by_title = 1 WHERE id = 5');
+  } catch(e) {}
 }
 
 // ============ SEED CATEGORIES ============
@@ -184,23 +194,26 @@ function seedCategories() {
   const count = db.prepare('SELECT COUNT(*) as count FROM categories').get();
   if (count.count > 0) return;
 
+  // Letzte Spalte: group_by_title — in der Abrechnung zusätzlich nach Termin-Titel
+  // aufschlüsseln. Nur Hobbies, wie im alten Abrechnungs-Tool. Vermietung läuft
+  // bewusst in einer Summe zusammen. Im Kategorien-Tab jederzeit änderbar.
   const categories = [
-    [1, 'Lavender', '#a4bdfc', 'rgba(164, 189, 252, 0.3)', 1],
-    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 2],
-    [3, 'Grape', '#dbadff', 'rgba(219, 173, 255, 0.3)', 3],
-    [4, 'Flamingo', '#ff887c', 'rgba(255, 136, 124, 0.3)', 4],
-    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 5],
-    [6, 'Tangerine', '#ffb878', 'rgba(255, 184, 120, 0.3)', 6],
-    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 7],
-    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 8],
-    [9, 'Blueberry', '#5484ed', 'rgba(84, 132, 237, 0.3)', 9],
-    [10, 'Basil', '#51b749', 'rgba(81, 183, 73, 0.3)', 10],
-    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 11],
+    [1, 'Lavender', '#a4bdfc', 'rgba(164, 189, 252, 0.3)', 1, 0],
+    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 2, 0],
+    [3, 'Grape', '#dbadff', 'rgba(219, 173, 255, 0.3)', 3, 0],
+    [4, 'Flamingo', '#ff887c', 'rgba(255, 136, 124, 0.3)', 4, 0],
+    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 5, 1],
+    [6, 'Tangerine', '#ffb878', 'rgba(255, 184, 120, 0.3)', 6, 0],
+    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 7, 0],
+    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 8, 0],
+    [9, 'Blueberry', '#5484ed', 'rgba(84, 132, 237, 0.3)', 9, 0],
+    [10, 'Basil', '#51b749', 'rgba(81, 183, 73, 0.3)', 10, 0],
+    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 11, 0],
   ];
 
   for (const cat of categories) {
     db.prepare(
-      'INSERT INTO categories (id, name, color_hex, color_bg, sort_order) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO categories (id, name, color_hex, color_bg, sort_order, group_by_title) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(...cat);
   }
 

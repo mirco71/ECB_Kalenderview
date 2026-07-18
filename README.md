@@ -84,8 +84,7 @@ npm run dev
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/events?start=ISO&end=ISO` | Fetch events in date range |
-| `GET` | `/api/events/:id` | Fetch single event |
+| `GET` | `/api/events?start=ISO&end=ISO` | Fetch events in date range || `GET` | `/api/events/:id` | Fetch single event |
 | `GET` | `/api/categories` | List all categories |
 | `GET` | `/api/config` | Calendar configuration |
 
@@ -98,6 +97,19 @@ npm run dev
 | `POST` | `/api/events` | Create event |
 | `PUT` | `/api/events/:id` | Update event |
 | `DELETE` | `/api/events/:id` | Delete event |
+| `GET` | `/api/stats?start=ISO&end=ISO&category_ids=5,7,8` | Billing report: count and total duration per category |
+
+### Billing report
+
+The **Abrechnung** tab in the admin panel reports, for a chosen period and set of
+categories, how many events occurred and their total duration — replacing the
+former Google Apps Script tool.
+
+Categories carry a `group_by_title` flag ("Nach Titel aufschlüsseln" in the
+category form). When set, that category is additionally broken down by event
+title; otherwise all its events are summed into a single line. Defaults:
+enabled for *Hobbies*, disabled for *Vermietung*. Results can be exported as CSV
+(semicolon-separated, UTF-8 BOM — opens directly in German Excel).
 
 ### Admin only
 

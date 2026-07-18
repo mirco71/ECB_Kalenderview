@@ -29,6 +29,7 @@ router.post(
     body('color_hex').matches(/^#[0-9a-fA-F]{6}$/).withMessage('Ungültige Farbe (z.B. #ff0000)'),
     body('color_bg').matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
+    body('group_by_title').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -36,7 +37,7 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
-    const { name, color_hex, color_bg, sort_order } = req.body;
+    const { name, color_hex, color_bg, sort_order, group_by_title } = req.body;
     const db = getDb();
 
     // Check for duplicate name
@@ -46,8 +47,8 @@ router.post(
     }
 
     const result = db
-      .prepare('INSERT INTO categories (name, color_hex, color_bg, sort_order) VALUES (?, ?, ?, ?)')
-      .run(name, color_hex, color_bg, sort_order || 0);
+      .prepare('INSERT INTO categories (name, color_hex, color_bg, sort_order, group_by_title) VALUES (?, ?, ?, ?, ?)')
+      .run(name, color_hex, color_bg, sort_order || 0, group_by_title ? 1 : 0);
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(category);
@@ -65,6 +66,7 @@ router.put(
     body('color_hex').optional().matches(/^#[0-9a-fA-F]{6}$/),
     body('color_bg').optional().matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
+    body('group_by_title').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -83,6 +85,9 @@ router.put(
       color_hex: req.body.color_hex ?? existing.color_hex,
       color_bg: req.body.color_bg ?? existing.color_bg,
       sort_order: req.body.sort_order ?? existing.sort_order,
+      group_by_title: req.body.group_by_title !== undefined
+        ? (req.body.group_by_title ? 1 : 0)
+        : existing.group_by_title,
     };
 
     // Check for duplicate name (if name changed)
@@ -93,8 +98,8 @@ router.put(
       }
     }
 
-    db.prepare('UPDATE categories SET name = ?, color_hex = ?, color_bg = ?, sort_order = ? WHERE id = ?')
-      .run(updates.name, updates.color_hex, updates.color_bg, updates.sort_order, parseInt(req.params.id));
+    db.prepare('UPDATE categories SET name = ?, color_hex = ?, color_bg = ?, sort_order = ?, group_by_title = ? WHERE id = ?')
+      .run(updates.name, updates.color_hex, updates.color_bg, updates.sort_order, updates.group_by_title, parseInt(req.params.id));
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(parseInt(req.params.id));
     res.json(category);

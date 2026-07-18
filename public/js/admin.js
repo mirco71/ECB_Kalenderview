@@ -48,6 +48,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (currentUser.role === 'admin') {
     await loadUsers();
   }
+
+  initStats();
 });
 
 // ============ TAB SWITCHING ============
@@ -315,6 +317,7 @@ async function loadCategories() {
         <td><span class="color-preview" style="background:${escapeHtml(c.color_hex)}"></span></td>
         <td>${escapeHtml(c.name)}</td>
         <td>${c.sort_order}</td>
+        <td>${c.group_by_title ? 'nach Titel' : 'gesamt'}</td>
         <td class="actions admin-only">
           <button class="btn-icon" title="Bearbeiten" onclick="editCategory(${c.id})">✏️</button>
           <button class="btn-icon" title="Löschen" onclick="deleteCategory(${c.id})">🗑️</button>
@@ -343,6 +346,7 @@ document.getElementById('categoryForm').addEventListener('submit', async (e) => 
     color_hex: colorHex,
     color_bg: hexToRgba(colorHex, 0.3),
     sort_order: parseInt(document.getElementById('categorySortOrder').value) || 0,
+    group_by_title: document.getElementById('categoryGroupByTitle').checked,
   };
 
   try {
@@ -368,6 +372,7 @@ function editCategory(id) {
   document.getElementById('categoryName').value = cat.name;
   document.getElementById('categoryColor').value = cat.color_hex;
   document.getElementById('categorySortOrder').value = cat.sort_order;
+  document.getElementById('categoryGroupByTitle').checked = !!cat.group_by_title;
 
   document.getElementById('categoryFormTitle').textContent = 'Kategorie bearbeiten';
   document.getElementById('categorySubmitBtn').textContent = 'Kategorie aktualisieren';
@@ -394,6 +399,7 @@ function resetCategoryForm() {
   document.getElementById('categoryForm').reset();
   document.getElementById('categoryId').value = '';
   document.getElementById('categoryColor').value = '#1a73e8';
+  document.getElementById('categoryGroupByTitle').checked = false;
   document.getElementById('categoryFormTitle').textContent = 'Neue Kategorie erstellen';
   document.getElementById('categorySubmitBtn').textContent = 'Kategorie erstellen';
   document.getElementById('categoryCancelBtn').style.display = 'none';
@@ -491,6 +497,166 @@ async function deleteUser(id) {
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+// ============================================================
+//  STATS / ABRECHNUNG
+// ============================================================
+
+// Vorauswahl entsprechend dem alten Abrechnungs-Tool:
+// STB, Hobbies, ECB, Vermietung, öffentliche Laufzeit
+const STATS_DEFAULT_CATEGORY_IDS = [2, 5, 7, 8, 11];
+
+let lastStats = null;
+
+function initStats() {
+  // Kategorie-Checkboxen aus den geladenen Kategorien aufbauen
+  const container = document.getElementById('statsCategories');
+  container.innerHTML = categories.map(c => `
+    <label class="stats-cat">
+      <input type="checkbox" value="${c.id}" ${STATS_DEFAULT_CATEGORY_IDS.includes(c.id) ? 'checked' : ''}>
+      <span class="color-preview" style="background:${escapeHtml(c.color_hex)}"></span>${escapeHtml(c.name)}
+    </label>
+  `).join('');
+
+  // Zeitraum-Presets
+  document.getElementById('statsPresetMonth').addEventListener('click', () => setStatsRange(0));
+  document.getElementById('statsPresetLastMonth').addEventListener('click', () => setStatsRange(-1));
+  document.getElementById('statsPresetYear').addEventListener('click', () => {
+    const now = new Date();
+    document.getElementById('statsStart').value = `${now.getFullYear()}-01-01`;
+    document.getElementById('statsEnd').value = `${now.getFullYear()}-12-31`;
+  });
+
+  // Standard: aktueller Monat (Abrechnungsrhythmus des alten Tools)
+  setStatsRange(0);
+
+  document.getElementById('statsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await runStats();
+  });
+  document.getElementById('statsCsvBtn').addEventListener('click', exportStatsCsv);
+}
+
+function setStatsRange(monthOffset) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0);
+  document.getElementById('statsStart').value = toLocalDate(new Date(first.getTime() - first.getTimezoneOffset() * 60000));
+  document.getElementById('statsEnd').value = toLocalDate(new Date(last.getTime() - last.getTimezoneOffset() * 60000));
+}
+
+function formatDauer(minuten) {
+  const stunden = Math.floor(minuten / 60);
+  const min = Math.round(minuten % 60);
+  if (stunden === 0) return `${min} Min`;
+  if (min === 0) return `${stunden} Std`;
+  return `${stunden} Std ${min} Min`;
+}
+
+async function runStats() {
+  const start = document.getElementById('statsStart').value;
+  const end = document.getElementById('statsEnd').value;
+  const ids = Array.from(document.querySelectorAll('#statsCategories input:checked')).map(cb => cb.value);
+
+  if (!start || !end) {
+    showToast('Bitte Zeitraum auswählen', 'error');
+    return;
+  }
+  if (ids.length === 0) {
+    showToast('Bitte mindestens eine Kategorie auswählen', 'error');
+    return;
+  }
+
+  const startISO = new Date(start).toISOString();
+  const endDate = new Date(end);
+  endDate.setDate(endDate.getDate() + 1); // Enddatum inklusive
+  const endISO = endDate.toISOString();
+
+  try {
+    const result = await API.request(
+      'GET',
+      `/api/stats?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}&category_ids=${ids.join(',')}`
+    );
+    lastStats = result;
+    renderStats(result, start, end);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderStats(result, start, end) {
+  const summary = document.getElementById('statsSummary');
+  summary.innerHTML = `
+    <div class="stats-card"><div class="stats-label">Zeitraum</div><div class="stats-value">${escapeHtml(formatDatum(start))} – ${escapeHtml(formatDatum(end))}</div></div>
+    <div class="stats-card"><div class="stats-label">Analysierte Termine</div><div class="stats-value">${result.gesamt.anzahl}</div></div>
+    <div class="stats-card"><div class="stats-label">Gesamtdauer</div><div class="stats-value">${escapeHtml(formatDauer(result.gesamt.dauerMinuten))}</div></div>
+  `;
+
+  const rows = [];
+  for (const g of result.gruppen) {
+    rows.push(`
+      <tr>
+        <td><span class="color-preview" style="background:${escapeHtml(g.color_hex)}"></span>${escapeHtml(g.name)}</td>
+        <td style="text-align:right">${g.anzahl}</td>
+        <td style="text-align:right"><strong>${escapeHtml(formatDauer(g.dauerMinuten))}</strong></td>
+        <td style="text-align:right">${escapeHtml(formatDauer(g.dauerMinuten / g.anzahl))}</td>
+      </tr>
+    `);
+    if (g.titel) {
+      for (const t of g.titel) {
+        rows.push(`
+          <tr class="stats-subrow">
+            <td style="padding-left:28px">↳ ${escapeHtml(t.titel)}</td>
+            <td style="text-align:right">${t.anzahl}</td>
+            <td style="text-align:right">${escapeHtml(formatDauer(t.dauerMinuten))}</td>
+            <td style="text-align:right">${escapeHtml(formatDauer(t.dauerMinuten / t.anzahl))}</td>
+          </tr>
+        `);
+      }
+    }
+  }
+
+  document.getElementById('statsTableBody').innerHTML = rows.length
+    ? rows.join('')
+    : '<tr><td colspan="4" style="text-align:center;color:#999">Keine Termine mit den gewählten Kategorien im Zeitraum</td></tr>';
+
+  document.getElementById('statsResult').style.display = '';
+  document.getElementById('statsCsvBtn').style.display = rows.length ? '' : 'none';
+}
+
+function formatDatum(isoDate) {
+  const [y, m, d] = isoDate.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function exportStatsCsv() {
+  if (!lastStats) return;
+
+  const lines = ['Kategorie;Titel;Anzahl;Dauer (Minuten);Dauer (formatiert)'];
+  for (const g of lastStats.gruppen) {
+    lines.push(`${csvEscape(g.name)};;${g.anzahl};${Math.round(g.dauerMinuten)};${csvEscape(formatDauer(g.dauerMinuten))}`);
+    if (g.titel) {
+      for (const t of g.titel) {
+        lines.push(`${csvEscape(g.name)};${csvEscape(t.titel)};${t.anzahl};${Math.round(t.dauerMinuten)};${csvEscape(formatDauer(t.dauerMinuten))}`);
+      }
+    }
+  }
+  lines.push(`Gesamt;;${lastStats.gesamt.anzahl};${Math.round(lastStats.gesamt.dauerMinuten)};${csvEscape(formatDauer(lastStats.gesamt.dauerMinuten))}`);
+
+  // BOM für korrekte Umlaute in Excel; Semikolon als Trenner (deutsches Excel)
+  const BOM = String.fromCharCode(0xFEFF);
+  const blob = new Blob([BOM + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `abrechnung_${document.getElementById('statsStart').value}_${document.getElementById('statsEnd').value}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function csvEscape(value) {
+  const s = String(value);
+  return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 function resetUserForm() {

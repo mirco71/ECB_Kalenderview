@@ -57,6 +57,7 @@ app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/events', require('./routes/events'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/stats', require('./routes/stats'));
 
 // Config endpoint (public, returns calendar settings)
 app.get('/api/config', (req, res) => {

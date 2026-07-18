@@ -22,6 +22,7 @@
     <div class="admin-tabs">
       <div class="admin-tab active" data-tab="events" onclick="switchTab('events')">📅 Termine</div>
       <div class="admin-tab" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
+      <div class="admin-tab" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
       <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
     </div>
 
@@ -136,7 +137,10 @@
                 <label for="categorySortOrder">Sortierung</label>
                 <input type="number" id="categorySortOrder" value="0">
               </div>
-              <div></div>
+              <div class="form-group checkbox-group">
+                <input type="checkbox" id="categoryGroupByTitle">
+                <label for="categoryGroupByTitle">In Abrechnung nach Titel aufschlüsseln</label>
+              </div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="categorySubmitBtn">Kategorie erstellen</button>
@@ -152,13 +156,63 @@
               <th>Farbe</th>
               <th>Name</th>
               <th>Sortierung</th>
+              <th>Abrechnung</th>
               <th class="actions admin-only">Aktionen</th>
             </tr>
           </thead>
           <tbody id="categoriesTableBody">
-            <tr><td colspan="4" style="text-align:center;color:#999">Lade...</td></tr>
+            <tr><td colspan="5" style="text-align:center;color:#999">Lade...</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- ============ STATS / ABRECHNUNG TAB ============ -->
+      <div class="tab-panel" id="tab-stats">
+        <div class="form-section">
+          <h3>Abrechnungs-Auswertung</h3>
+          <form id="statsForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="statsStart">Von</label>
+                <input type="date" id="statsStart" required>
+              </div>
+              <div class="form-group">
+                <label for="statsEnd">Bis</label>
+                <input type="date" id="statsEnd" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <button type="button" class="btn btn-outline btn-sm" id="statsPresetMonth">Dieser Monat</button>
+                <button type="button" class="btn btn-outline btn-sm" id="statsPresetLastMonth">Letzter Monat</button>
+                <button type="button" class="btn btn-outline btn-sm" id="statsPresetYear">Dieses Jahr</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Kategorien</label>
+              <div id="statsCategories" class="stats-categories"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">📊 Auswerten</button>
+              <button type="button" class="btn btn-outline" id="statsCsvBtn" style="display:none">⬇️ CSV exportieren</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="statsResult" style="display:none">
+          <div class="stats-summary" id="statsSummary"></div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Kategorie</th>
+                <th style="text-align:right">Anzahl</th>
+                <th style="text-align:right">Gesamtdauer</th>
+                <th style="text-align:right">Durchschnitt</th>
+              </tr>
+            </thead>
+            <tbody id="statsTableBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ============ USERS TAB ============ -->

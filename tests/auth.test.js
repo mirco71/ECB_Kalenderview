@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 
 // Use in-memory test database
 process.env.DB_PATH = ':memory:';
-process.env.JWT_SECRET = 'test-secret-key';
+process.env.JWT_SECRET = 'test-secret-key-auth';
 process.env.PORT = '0';
 
 let server, baseUrl;
