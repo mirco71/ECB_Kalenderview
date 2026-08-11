@@ -73,8 +73,12 @@ describe('Categories API', () => {
     const res = await req('GET', '/api/categories');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBe(11);
-    expect(res.body.find(c => c.name === 'ECB')).toBeDefined();
+    // 5 seit "Reduce predefined categories to 5": STB, Hobbies, ECB,
+    // Vermietung, öffentliche Laufzeit.
+    expect(res.body.length).toBe(5);
+    expect(res.body.map(c => c.name)).toEqual(
+      expect.arrayContaining(['STB', 'Hobbies', 'ECB', 'Vermietung', 'öffentliche Laufzeit'])
+    );
   });
 
   it('should allow admin to create a category', async () => {
