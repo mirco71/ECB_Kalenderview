@@ -932,8 +932,47 @@ function renderStats(result, start, end) {
     ? rows.join('')
     : '<tr><td colspan="4" style="text-align:center;color:#999">Keine Termine mit den gewählten Kategorien im Zeitraum</td></tr>';
 
+  renderUeberschneidungen(result.ueberschneidungen);
+
   document.getElementById('statsResult').style.display = '';
   document.getElementById('statsCsvBtn').style.display = rows.length ? '' : 'none';
+}
+
+// Warnt vor gleichzeitigen Terminen: Die Halle war einmal belegt, die Summe
+// zählt zweimal. Häufigster Grund sind parallele Trainings, die noch nicht zu
+// einem Termin zusammengeführt wurden. Ohne diesen Hinweis fiele der zu hohe
+// Wert niemandem auf — er sieht plausibel aus.
+function renderUeberschneidungen(ueb) {
+  const box = document.getElementById('statsUeberschneidungen');
+  if (!box) return;
+
+  if (!ueb || !ueb.anzahl) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
+  const faelle = ueb.faelle.map(f => `
+    <li>
+      ${escapeHtml(formatDatum(f.datum))}:
+      <strong>${escapeHtml(f.titelA)}</strong> und <strong>${escapeHtml(f.titelB)}</strong>
+      — ${escapeHtml(formatDauer(f.minuten))} gleichzeitig
+    </li>
+  `).join('');
+
+  const weitere = ueb.weitere
+    ? `<li>… und ${ueb.weitere} weitere</li>`
+    : '';
+
+  box.innerHTML = `
+    <strong>⚠ ${ueb.anzahl} zeitliche Überschneidung${ueb.anzahl === 1 ? '' : 'en'}
+    (${escapeHtml(formatDauer(ueb.minuten))})</strong>
+    <p>Gleichzeitige Termine zählen doppelt, obwohl die Halle nur einmal belegt war.
+    Häufigste Ursache: parallele Trainings, die noch nicht zu einem Termin
+    zusammengeführt wurden.</p>
+    <ul>${faelle}${weitere}</ul>
+  `;
+  box.style.display = '';
 }
 
 function formatDatum(isoDate) {

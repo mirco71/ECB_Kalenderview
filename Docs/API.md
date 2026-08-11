@@ -49,6 +49,20 @@ oder gelöscht (`PUT`/`DELETE /api/events/:id`); sie behalten dabei ihre `series
 `{ wochentag, zeitVon, zeitBis, datumVon, datumBis, anzahl }` mit, damit die
 Admin-Liste eine Serie ohne Zusatz-Request zu einer Zeile zusammenfassen kann.
 
+### Warnung vor Überschneidungen
+
+Jede Antwort enthält `ueberschneidungen` mit `{ anzahl, minuten, faelle[], weitere, text }`.
+Gemeldet werden Termine der ausgewählten Kategorien, die sich zeitlich
+überlagern — sie zählen doppelt, obwohl die Halle nur einmal belegt war.
+Häufigste Ursache sind parallele Trainings, die nach dem Grundstock aus
+Hallenplanung noch nicht zu einem Termin zusammengeführt wurden (siehe
+„Gemeinsame Trainings" in [DATABASE.md](DATABASE.md)).
+
+`minuten` beziffert, um wie viel die Gesamtsumme dadurch zu hoch liegt.
+Termine, die sich nur berühren (einer endet 18:00, der nächste beginnt 18:00),
+gelten nicht als Überschneidung. `faelle` ist auf 20 Einträge begrenzt, `weitere`
+nennt den Rest. Ohne Überschneidungen ist `anzahl` 0 und `text` `null`.
+
 ### Aufschlüsselung nach Team
 
 `group_by_team=1` ergänzt die Antwort um `teams[]` mit `{ team, anzahl, dauerMinuten }`.

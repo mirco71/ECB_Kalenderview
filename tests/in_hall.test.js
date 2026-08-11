@@ -177,4 +177,66 @@ describe('in_hall — Hallenbelegung vs. Team-Kalender', () => {
     const res = await req('GET', `/api/stats?${range}&category_ids=7`, null, adminToken);
     expect(res.body.teams).toBeUndefined();
   });
+
+  it('meldet keine Überschneidungen, wenn es keine gibt', async () => {
+    const res = await req('GET', `/api/stats?${range}&category_ids=7,8`, null, adminToken);
+    expect(res.body.ueberschneidungen.anzahl).toBe(0);
+    expect(res.body.ueberschneidungen.text).toBeNull();
+  });
+
+  // Verschachtelt, damit Server und Datenbank aus dem äußeren beforeAll/afterAll
+  // noch stehen — ein eigener describe auf Dateiebene liefe nach dem Schließen.
+  describe('Überschneidungswarnung', () => {
+    const range = 'start=2026-11-01T00:00:00.000Z&end=2026-12-01T00:00:00.000Z';
+
+    beforeAll(() => {
+      // Zwei parallele Trainings — der Fall, den die Warnung abfangen soll:
+      // beim Grundstock aus Hallenplanung kamen U13 und U15 getrennt herein und
+      // wurden noch nicht zu einem Termin zusammengeführt.
+      insertEvent({
+        title: 'U13 Training',
+        start: '2026-11-04T16:00:00.000Z',
+        end: '2026-11-04T17:30:00.000Z',
+      });
+      insertEvent({
+        title: 'U15 Training',
+        start: '2026-11-04T16:00:00.000Z',
+        end: '2026-11-04T17:30:00.000Z',
+      });
+      // Direkt anschließend, aber ohne Überlappung — darf nicht gemeldet werden.
+      insertEvent({
+        title: 'U17 Training',
+        start: '2026-11-04T17:30:00.000Z',
+        end: '2026-11-04T19:00:00.000Z',
+      });
+    });
+
+    it('erkennt gleichzeitige Termine und beziffert die Doppelzählung', async () => {
+      const res = await req('GET', `/api/stats?${range}&category_ids=7`, null, adminToken);
+      const ueb = res.body.ueberschneidungen;
+
+      expect(ueb.anzahl).toBe(1);
+      expect(ueb.minuten).toBe(90);
+      expect(ueb.text).toContain('Überschneidung');
+
+      const titel = [ueb.faelle[0].titelA, ueb.faelle[0].titelB].sort();
+      expect(titel).toEqual(['U13 Training', 'U15 Training']);
+      expect(ueb.faelle[0].datum).toBe('2026-11-04');
+    });
+
+    it('wertet direkt aneinandergrenzende Termine nicht als Überschneidung', async () => {
+      // U17 beginnt exakt, wenn die anderen enden — das ist der Normalfall
+      // hintereinander liegender Einheiten und keine Doppelzählung.
+      const res = await req('GET', `/api/stats?${range}&category_ids=7`, null, adminToken);
+      const beteiligt = res.body.ueberschneidungen.faelle.flatMap(f => [f.titelA, f.titelB]);
+      expect(beteiligt).not.toContain('U17 Training');
+    });
+
+    it('zeigt die Doppelzählung in der Gesamtsumme', async () => {
+      // 3 × 90 Minuten gezählt, tatsächlich belegt waren nur 180.
+      const res = await req('GET', `/api/stats?${range}&category_ids=7`, null, adminToken);
+      expect(res.body.gesamt.dauerMinuten).toBe(270);
+      expect(res.body.gesamt.dauerMinuten - res.body.ueberschneidungen.minuten).toBe(180);
+    });
+  });
 });

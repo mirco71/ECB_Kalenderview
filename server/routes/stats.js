@@ -6,6 +6,73 @@ const { TEAMS, teamsFromTitle } = require('../teams');
 
 const router = express.Router();
 
+/** Höchstens so viele Einzelfälle zurückgeben — der Rest wäre nur Rauschen. */
+const MAX_UEBERSCHNEIDUNGEN = 20;
+
+/**
+ * Findet zeitliche Überschneidungen unter den gezählten Terminen.
+ *
+ * Zwei Termine, die gleichzeitig auf demselben Eis liegen, blähen die Summe
+ * auf: Die Halle war einmal belegt, gezählt wird zweimal. Häufigster Grund
+ * sind parallele Trainings, die nach dem Grundstock aus Hallenplanung noch
+ * nicht zu einem Termin zusammengeführt wurden (siehe Docs/DATABASE.md).
+ *
+ * Erkannt wird über alle ausgewählten Kategorien hinweg, denn für die Frage
+ * "ist diese Summe belastbar" ist es gleich, ob sich zwei ECB-Trainings oder
+ * ein Training und eine Vermietung überlagern.
+ *
+ * Termine, die sich nur berühren (einer endet 18:00, der nächste beginnt
+ * 18:00), sind keine Überschneidung.
+ *
+ * @param {Array} events nach start_time aufsteigend sortiert
+ */
+function findeUeberschneidungen(events) {
+  const faelle = [];
+  let minutenGesamt = 0;
+  let anzahl = 0;
+
+  for (let i = 0; i < events.length; i++) {
+    const a = events[i];
+    const aStart = new Date(a.start_time);
+    const aEnde = new Date(a.end_time);
+
+    for (let j = i + 1; j < events.length; j++) {
+      const b = events[j];
+      const bStart = new Date(b.start_time);
+      // Sortiert nach Start: ab hier beginnt nichts mehr vor dem Ende von a.
+      if (bStart >= aEnde) break;
+
+      const bEnde = new Date(b.end_time);
+      const ueberlappung = (Math.min(aEnde, bEnde) - Math.max(aStart, bStart)) / 60000;
+      if (ueberlappung <= 0) continue;
+
+      anzahl++;
+      minutenGesamt += ueberlappung;
+      if (faelle.length < MAX_UEBERSCHNEIDUNGEN) {
+        faelle.push({
+          datum: a.start_time.slice(0, 10),
+          titelA: a.title,
+          titelB: b.title,
+          minuten: ueberlappung,
+        });
+      }
+    }
+  }
+
+  return {
+    anzahl,
+    minuten: minutenGesamt,
+    faelle,
+    weitere: Math.max(0, anzahl - faelle.length),
+    text: anzahl
+      ? `${anzahl} Überschneidung(en) mit zusammen ${minutenGesamt} Minuten. ` +
+        'Gleichzeitige Termine zählen doppelt, obwohl die Halle nur einmal belegt war. ' +
+        'Häufigste Ursache: parallele Trainings, die noch nicht zu einem Termin ' +
+        'zusammengeführt wurden.'
+      : null,
+  };
+}
+
 // GET /api/stats?start=ISO&end=ISO&category_ids=2,5,7,8,11[&group_by_team=1]
 // Abrechnungs-Auswertung: Anzahl und Gesamtdauer der Termine je Kategorie im
 // Zeitraum. Nur für angemeldete Benutzer — Abrechnungsdaten sind intern.
@@ -61,10 +128,13 @@ router.get(
     let gesamtDauer = 0;
     let mehrfachZugeordnet = 0;
 
+    const gezaehlt = [];
+
     for (const ev of events) {
       if (!categoryIds.includes(ev.category_id)) continue;
 
       const dauer = (new Date(ev.end_time) - new Date(ev.start_time)) / 60000; // Minuten
+      gezaehlt.push(ev);
 
       if (groupByTeam) {
         const teams = teamsFromTitle(ev.title);
@@ -128,6 +198,7 @@ router.get(
       termineGesamt: events.length,
       gruppen: ergebnis,
       gesamt: { anzahl: gesamtAnzahl, dauerMinuten: gesamtDauer },
+      ueberschneidungen: findeUeberschneidungen(gezaehlt),
     };
 
     if (groupByTeam) {
