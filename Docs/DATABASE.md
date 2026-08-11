@@ -82,10 +82,51 @@ aus der früheren `repeat_weeks`-Implementierung stammen (idempotent).
 | all_day | INTEGER NOT NULL DEFAULT 0 | Bool als 0/1 |
 | description / location | TEXT DEFAULT '' | |
 | series_id | TEXT DEFAULT NULL | FK auf `series.id`; NULL bei Einzelterminen. Bleibt auch erhalten, wenn die Uhrzeit des Termins von der Serien-Definition abweicht |
+| external_uid | TEXT DEFAULT NULL | Stabiler Fremdschlüssel aus Hallenplanung. NULL = von Hand angelegt |
+| source | TEXT DEFAULT NULL | Herkunft, z. B. `hallenplanung`. NULL = von Hand angelegt |
+| in_hall | INTEGER NOT NULL DEFAULT 1 | 0 = belegt keine Eiszeit in Solingen (Auswärtsspiele) |
 | created_by | INTEGER | FK → users.id, `ON DELETE SET NULL` |
 | created_at / updated_at | TEXT | |
 
-Indizes auf `start_time`, `end_time`, `category_id`, `series_id`.
+Indizes auf `start_time`, `end_time`, `category_id`, `series_id` sowie ein
+**partieller** Unique-Index auf `external_uid` (nur für Zeilen, die einen haben —
+so bleiben beliebig viele manuelle Termine ohne Fremdschlüssel möglich).
+
+#### `in_hall` — warum es das gibt
+
+Auswärtsspiele stehen in dieser Datenbank, damit sie in den Team-Feeds und damit
+in den Kalendern der Eltern erscheinen. Sie finden aber in fremden Hallen statt.
+Deshalb filtern **zwei** Stellen auf `in_hall = 1`:
+
+- `GET /api/events` (Hallenansicht) — mit `?include_extern=1` abschaltbar; die
+  Admin-Terminliste nutzt das, sonst könnte sie Auswärtsspiele nicht verwalten
+- `GET /api/stats` (Abrechnung) — **nicht** abschaltbar. Ohne diesen Filter wären
+  die ausgewiesenen ECB-Stunden zu hoch, und zwar unauffällig, weil das Ergebnis
+  plausibel aussähe
+
+Der Default `1` sorgt dafür, dass alle bestehenden Zeilen unverändert zählen.
+
+#### `external_uid` / `source`
+
+Der Abgleich mit Hallenplanung fasst ausschließlich Zeilen mit `external_uid` an.
+Von Hand angelegte Termine — STB, Vermietung, öffentliche Laufzeit, Hobbies — und
+die Trainings-Serien bleiben dadurch unberührt. Trainings bekommen bewusst
+**keine** `external_uid`: Sie werden einmalig aus Hallenplanung übernommen und
+gehören danach Kalenderview, damit einzelne Einheiten hier abgesagt und
+verschoben werden können.
+
+### Team-Zuordnung (`server/teams.js`)
+
+Die Zuordnung eines Termins zu Teams wird **aus dem Titel abgeleitet** und nicht
+gespeichert. Benennt jemand ein Training um — etwa weil U13/15 und U17/20 ihre
+Einheiten tauschen — wandert der Termin dadurch von selbst in die richtigen
+Feeds; eine zweite gespeicherte Quelle könnte vom Titel abweichen.
+
+Die Ableitung löst Kurzschreibweisen auf: `U13/15` ergibt *U13 und U15*, weil die
+`15` ohne führendes `U` steht und ein reiner Wortabgleich sie übersähe — die
+U15-Eltern bekämen den Termin sonst nie. `U11A`/`U11B` zählen beide als `U11`.
+Unbekannte Kürzel werden verworfen, damit ein Vertipper keinen Feed für ein
+Phantom-Team erzeugt.
 
 ## Migrationen
 

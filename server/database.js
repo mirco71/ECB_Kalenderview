@@ -158,6 +158,14 @@ function migrate() {
     group_by_title INTEGER NOT NULL DEFAULT 0
   )`);
 
+  // external_uid/source: Termine, die aus Hallenplanung stammen. Der Abgleich
+  // fasst ausschließlich Zeilen mit external_uid an — von Hand angelegte
+  // Termine (STB, Vermietung, öffentliche Laufzeit, Hobbies) und die
+  // Trainings-Serien bleiben dadurch unberührt.
+  // in_hall = 0 markiert Termine, die KEINE Eiszeit in Solingen belegen
+  // (Auswärtsspiele). Sie gehören in die Team-Feeds, aber weder in die
+  // Hallenansicht noch in die Abrechnung — sonst wären die ausgewiesenen
+  // Stunden zu hoch.
   db.exec(`CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -168,6 +176,9 @@ function migrate() {
     description TEXT DEFAULT '',
     location TEXT DEFAULT '',
     series_id TEXT DEFAULT NULL,
+    external_uid TEXT DEFAULT NULL,
+    source TEXT DEFAULT NULL,
+    in_hall INTEGER NOT NULL DEFAULT 1,
     created_by INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -206,6 +217,23 @@ function migrate() {
 
   // Migration: add series_id column if missing (for existing databases)
   try { db.exec('ALTER TABLE events ADD COLUMN series_id TEXT DEFAULT NULL'); } catch(e) {}
+
+  // Migration: Spalten für den Abgleich mit Hallenplanung (siehe CREATE TABLE).
+  // Reine Spalten-Ergänzungen — alter Code ignoriert sie, ein Rollback der
+  // Anwendung ist also gefahrlos. Der Default in_hall = 1 lässt alle
+  // bestehenden Zeilen unverändert in Kalenderansicht und Abrechnung.
+  try { db.exec('ALTER TABLE events ADD COLUMN external_uid TEXT DEFAULT NULL'); } catch(e) {}
+  try { db.exec('ALTER TABLE events ADD COLUMN source TEXT DEFAULT NULL'); } catch(e) {}
+  try { db.exec('ALTER TABLE events ADD COLUMN in_hall INTEGER NOT NULL DEFAULT 1'); } catch(e) {}
+
+  // Partieller Unique-Index: verhindert doppelte Fremdschlüssel, lässt aber
+  // beliebig viele Zeilen ohne external_uid zu (alle manuellen Termine).
+  try {
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_events_external_uid ' +
+      'ON events(external_uid) WHERE external_uid IS NOT NULL'
+    );
+  } catch(e) {}
 
   // Migration: add group_by_title flag to categories (for existing databases).
   // Steuert, ob eine Kategorie in der Abrechnung zusätzlich nach Termin-Titel

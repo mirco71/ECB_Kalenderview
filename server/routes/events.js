@@ -30,12 +30,18 @@ const EVENT_SELECT = `${EVENT_BASE} WHERE e.id = ?`;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-// GET /api/events?start=ISO&end=ISO
+// GET /api/events?start=ISO&end=ISO[&include_extern=1]
+//
+// Standardmäßig nur Termine, die die Halle belegen (in_hall = 1) — das ist die
+// Hallenansicht. Auswärtsspiele finden woanders statt und gehören dort nicht
+// hinein. Die Admin-Terminliste setzt include_extern=1, sonst könnte sie die
+// Auswärtsspiele nicht anzeigen.
 router.get(
   '/',
   [
     query('start').isISO8601().withMessage('Ungültiges Startdatum'),
     query('end').isISO8601().withMessage('Ungültiges Enddatum'),
+    query('include_extern').optional().isBoolean().withMessage('include_extern muss boolesch sein'),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -44,10 +50,15 @@ router.get(
     }
 
     const { start, end } = req.query;
+    const includeExtern = req.query.include_extern === 'true' || req.query.include_extern === '1';
     const db = getDb();
 
+    const hallFilter = includeExtern ? '' : ' AND e.in_hall = 1';
     const events = db
-      .prepare(`${EVENT_BASE} WHERE e.start_time < ? AND e.end_time > ? ORDER BY e.start_time ASC`)
+      .prepare(
+        `${EVENT_BASE} WHERE e.start_time < ? AND e.end_time > ?${hallFilter}` +
+        ' ORDER BY e.start_time ASC'
+      )
       .all(end, start);
 
     res.json({

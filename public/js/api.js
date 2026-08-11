@@ -65,8 +65,11 @@ const API = {
 
   // ============ EVENTS ============
 
-  async getEvents(startISO, endISO) {
-    return this.request('GET', `/api/events?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`);
+  // includeExtern: auch Termine, die die Halle nicht belegen (Auswärtsspiele).
+  // Die Kalenderansicht lässt sie weg, die Admin-Terminliste braucht sie.
+  async getEvents(startISO, endISO, includeExtern = false) {
+    const extern = includeExtern ? '&include_extern=1' : '';
+    return this.request('GET', `/api/events?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}${extern}`);
   },
 
   async createEvent(eventData) {

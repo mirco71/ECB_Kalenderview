@@ -174,7 +174,9 @@ async function loadEvents() {
   const endISO = endDate.toISOString();
 
   try {
-    const result = await API.getEvents(startISO, endISO);
+    // includeExtern: Auswärtsspiele belegen die Halle nicht und fehlen deshalb
+    // in der Kalenderansicht — in der Verwaltung müssen sie trotzdem sichtbar sein.
+    const result = await API.getEvents(startISO, endISO, true);
     events = result.termine;
     const tbody = document.getElementById('eventsTableBody');
 
