@@ -1,14 +1,27 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth } = require('../middleware/auth');
-const { localDateTime } = require('../datetime');
+const {
+  localDateTime,
+  toLocalDateString,
+  generateSeriesDates,
+  MAX_SERIES_EVENTS,
+} = require('../datetime');
 
 const router = express.Router();
 
 const PAYLOAD_FORMAT = 'ecb-calendar';
 const SUPPORTED_VERSION = 1;
 const SOURCE = 'hallenplanung';
+
+/**
+ * Eigene Herkunft für Trainings. Bewusst verschieden von SOURCE: Der
+ * Spiele-Abgleich löscht, was er nicht mehr kennt — Trainings gehören nach der
+ * Übertragung aber Kalenderview und dürfen ihm nie in die Hände fallen.
+ */
+const SOURCE_TRAINING = 'hallenplanung-training';
 
 /** Standard-Kategorie für übernommene Spiele, per Name aufgelöst. */
 const DEFAULT_CATEGORY = 'ECB';
@@ -215,6 +228,144 @@ router.post(
         geaendert: zuAendern.slice(0, MAX_DETAILS).map(kurz),
         geloescht: zuLoeschen.slice(0, MAX_DETAILS).map(kurz),
       },
+    });
+  }
+);
+
+// POST /api/sync/training[?dry_run=true]
+//
+// Einmalige Grundstock-Übertragung der Trainingszeiten: legt je Team und
+// Wochentag eine Serie an. **Danach gehören die Trainings Kalenderview** — hier
+// werden Einheiten abgesagt und verschoben, und keine spätere Veröffentlichung
+// fasst sie wieder an.
+//
+// Genau deshalb bricht ein zweiter Aufruf ab, statt zu ersetzen: Er würde alle
+// von Hand gepflegten Ausfälle und Verschiebungen vernichten — und die zu
+// schützen ist der Zweck der ganzen Aufteilung. Kommt später ein Team dazu,
+// wird dessen Serie von Hand in Kalenderview angelegt.
+router.post(
+  '/training',
+  requireAuth,
+  [
+    query('dry_run').optional().isBoolean().withMessage('dry_run muss boolesch sein'),
+    body('format').equals(PAYLOAD_FORMAT).withMessage(`format muss "${PAYLOAD_FORMAT}" sein`),
+    body('format_version').isInt().withMessage('format_version fehlt'),
+    body('training').isArray().withMessage('training muss eine Liste sein'),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const probelauf = req.query.dry_run === 'true' || req.query.dry_run === '1';
+    const { format_version, training } = req.body;
+
+    if (format_version !== SUPPORTED_VERSION) {
+      return res.status(400).json({
+        error: `format_version ${format_version} wird nicht unterstützt ` +
+               `(erwartet: ${SUPPORTED_VERSION}). Bitte Hallenplanung aktualisieren.`,
+      });
+    }
+
+    const db = getDb();
+
+    const kategorieName = req.body.category || DEFAULT_CATEGORY;
+    const kategorie = db.prepare('SELECT id FROM categories WHERE name = ?').get(kategorieName);
+    if (!kategorie) {
+      return res.status(400).json({
+        error: `Kategorie "${kategorieName}" existiert nicht. Bitte in Kalenderview anlegen.`,
+      });
+    }
+
+    // Schon übertragen? Dann nichts anfassen.
+    const bestehende = db
+      .prepare('SELECT title, date_from, date_to FROM series WHERE source = ? ORDER BY title')
+      .all(SOURCE_TRAINING);
+    if (bestehende.length > 0) {
+      return res.status(409).json({
+        error:
+          `Es gibt bereits ${bestehende.length} übertragene Trainings-Serie(n). ` +
+          'Der Grundstock wird nur einmal je Saison übertragen — sonst gingen alle ' +
+          'in Kalenderview gepflegten Ausfälle und Verschiebungen verloren. ' +
+          'Einzelne Serien bitte direkt in Kalenderview anlegen oder ändern.',
+        vorhanden: bestehende.map(s => ({
+          titel: s.title, von: s.date_from, bis: s.date_to,
+        })),
+      });
+    }
+
+    // Vorbereiten und prüfen, bevor irgendetwas geschrieben wird.
+    const geplant = [];
+    for (const t of training) {
+      if (!t || !t.title) continue;
+
+      const geschlossen = new Set(t.closures || []);
+      const alle = generateSeriesDates(
+        Number(t.weekday), t.date_from, t.date_to, t.time_from, t.time_to
+      );
+      // Hallenschließungen vor dem Anlegen aussortieren statt hinterher zu
+      // löschen: So entsteht der Termin gar nicht erst und niemand sieht ihn
+      // kurz im Kalender aufblitzen.
+      const termine = alle.filter(o => !geschlossen.has(toLocalDateString(o.start)));
+
+      if (termine.length === 0) continue;
+      if (termine.length >= MAX_SERIES_EVENTS) {
+        return res.status(400).json({
+          error: `"${t.title}": Zeitraum zu lang — maximal ${MAX_SERIES_EVENTS} Termine pro Serie`,
+        });
+      }
+
+      geplant.push({
+        titel: t.title,
+        weekday: Number(t.weekday),
+        time_from: t.time_from,
+        time_to: t.time_to,
+        termine,
+        entfallen: alle.length - termine.length,
+      });
+    }
+
+    if (!probelauf) {
+      for (const s of geplant) {
+        const seriesId = crypto.randomUUID();
+        db.prepare(
+          `INSERT INTO series (id, title, category_id, weekday, time_from, time_to,
+                               date_from, date_to, description, location, source, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)`
+        ).run(
+          seriesId, s.titel, kategorie.id, s.weekday, s.time_from, s.time_to,
+          toLocalDateString(s.termine[0].start),
+          toLocalDateString(s.termine[s.termine.length - 1].start),
+          SOURCE_TRAINING, req.user.id
+        );
+
+        for (const occ of s.termine) {
+          db.prepare(
+            `INSERT INTO events (title, start_time, end_time, category_id, all_day,
+                                 description, location, series_id, source, in_hall, created_by)
+             VALUES (?, ?, ?, ?, 0, '', '', ?, ?, 1, ?)`
+          ).run(
+            s.titel, occ.start.toISOString(), occ.end.toISOString(), kategorie.id,
+            seriesId, SOURCE_TRAINING, req.user.id
+          );
+        }
+      }
+    }
+
+    res.json({
+      erfolg: true,
+      probelauf,
+      serien: geplant.length,
+      termine: geplant.reduce((n, s) => n + s.termine.length, 0),
+      wegenSchliessung: geplant.reduce((n, s) => n + s.entfallen, 0),
+      details: geplant.map(s => ({
+        titel: s.titel,
+        anzahl: s.termine.length,
+        von: toLocalDateString(s.termine[0].start),
+        bis: toLocalDateString(s.termine[s.termine.length - 1].start),
+        entfallen: s.entfallen,
+      })),
     });
   }
 );

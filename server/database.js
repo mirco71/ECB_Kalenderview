@@ -202,6 +202,7 @@ function migrate() {
     date_to TEXT NOT NULL,
     description TEXT DEFAULT '',
     location TEXT DEFAULT '',
+    source TEXT DEFAULT NULL,
     created_by INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -225,6 +226,11 @@ function migrate() {
   try { db.exec('ALTER TABLE events ADD COLUMN external_uid TEXT DEFAULT NULL'); } catch(e) {}
   try { db.exec('ALTER TABLE events ADD COLUMN source TEXT DEFAULT NULL'); } catch(e) {}
   try { db.exec('ALTER TABLE events ADD COLUMN in_hall INTEGER NOT NULL DEFAULT 1'); } catch(e) {}
+
+  // Herkunft auch auf der Serie: Daran erkennt der Trainings-Grundstock, dass er
+  // für diese Saison schon gelaufen ist, und bricht ab statt die von Hand
+  // gepflegten Ausfälle und Verschiebungen zu überschreiben.
+  try { db.exec('ALTER TABLE series ADD COLUMN source TEXT DEFAULT NULL'); } catch(e) {}
 
   // Partieller Unique-Index: verhindert doppelte Fremdschlüssel, lässt aber
   // beliebig viele Zeilen ohne external_uid zu (alle manuellen Termine).

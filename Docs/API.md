@@ -80,6 +80,7 @@ die Anzeige — ohne den wirkt die Auswertung fehlerhaft.
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | POST | `/api/sync/calendar[?dry_run=true]` | Gleicht die **Spiele** aus Hallenplanung gegen den Bestand ab: neue anlegen, geänderte aktualisieren, im Zeitraum fehlende löschen |
+| POST | `/api/sync/training[?dry_run=true]` | **Einmalige** Grundstock-Übertragung der Trainingszeiten als Serien. Ein zweiter Aufruf wird mit `409` abgelehnt |
 
 **Nutzlast** im Format `ecb-calendar` (erzeugt von `export/calendar_model.py` in
 Hallenplanung):
@@ -123,6 +124,27 @@ Titel und Startzeit für die Anzeige im Vorschau-Dialog.
 
 Statuscodes: `400` bei fremdem `format`, nicht unterstützter `format_version`,
 doppelten `uid`s oder unbekannter Kategorie.
+
+### Trainings-Grundstock — genau einmal je Saison
+
+`POST /api/sync/training` legt je Eintrag in `training[]` eine Serie an. Jeder
+Eintrag: `{ title, weekday (0=So..6=Sa), time_from, time_to, date_from, date_to,
+closures[] }`. Tage in `closures` (Hallenschließungen) werden **vor** dem
+Anlegen aussortiert, damit der Termin gar nicht erst entsteht.
+
+Serie und Termine bekommen `source = 'hallenplanung-training'` — bewusst
+verschieden von `'hallenplanung'`, damit der Spiele-Abgleich sie nie anfasst.
+Eine `external_uid` bekommen sie **nicht**: Trainings werden nach der
+Übertragung nie wieder abgeglichen.
+
+**Ein zweiter Aufruf wird mit `409` abgelehnt**, statt zu ersetzen. Nach dem
+Grundstock gehören die Trainings Kalenderview; ein Ersetzen würde jede dort
+gepflegte Absage und Verschiebung vernichten — und die zu schützen ist der Zweck
+der ganzen Aufteilung. Die Antwort enthält dann `vorhanden[]` mit den bereits
+angelegten Serien. Kommt später ein Team dazu, wird dessen Serie von Hand
+angelegt.
+
+**Antwort**: `{ erfolg, probelauf, serien, termine, wegenSchliessung, details[] }`.
 
 ## Admin only (`requireAuth` + `requireAdmin`)
 
