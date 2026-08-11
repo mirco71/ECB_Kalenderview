@@ -75,6 +75,55 @@ deshalb größer sein als `gesamt.dauerMinuten`. `teamsHinweis` enthält dazu
 `mehrfachZugeordnet` (Anzahl solcher Termine) und einen fertigen Hinweistext für
 die Anzeige — ohne den wirkt die Auswertung fehlerhaft.
 
+## Abgleich mit Hallenplanung (JWT)
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| POST | `/api/sync/calendar[?dry_run=true]` | Gleicht die **Spiele** aus Hallenplanung gegen den Bestand ab: neue anlegen, geänderte aktualisieren, im Zeitraum fehlende löschen |
+
+**Nutzlast** im Format `ecb-calendar` (erzeugt von `export/calendar_model.py` in
+Hallenplanung):
+
+```json
+{
+  "format": "ecb-calendar",
+  "format_version": 1,
+  "timezone": "Europe/Berlin",
+  "season": { "name": "2026/27", "date_from": "2026-09-01", "date_to": "2027-03-31" },
+  "events": [
+    { "uid": "hp-…", "kind": "heimspiel", "title": "U17 Heimspiel gegen Ratingen",
+      "date": "2026-10-03", "start": "18:15", "end": "20:30", "all_day": false,
+      "location": "Solingen", "occupies_hall": true }
+  ],
+  "training": []
+}
+```
+
+Optional `category` (Name, Vorgabe `ECB`) für die Kategorie der angelegten Termine.
+
+**Was angefasst wird:** ausschließlich Zeilen mit `source = 'hallenplanung'`,
+deren `start_time` im gelieferten Zeitraum liegt. Von Hand angelegte Termine und
+die Trainings-Serien bleiben unberührt — das ist die zentrale Zusicherung und
+durch Tests abgesichert.
+
+**Was übersprungen wird:** Einträge mit `kind = "blocker"`. Sie reisen in der
+Nutzlast mit, damit Hallenplanung nicht entscheiden muss, wer sie braucht.
+
+**Zeiten** kommen als lokale Wandzeit plus `timezone` und werden hier nach UTC
+umgerechnet (`localDateTime()` aus `server/datetime.js`). Ganztägige Termine
+laufen von Mitternacht bis Mitternacht des Folgetags.
+
+**`dry_run=true`** rechnet denselben Abgleich durch, schreibt aber nichts. Die
+Vorschau in Hallenplanung ist damit derselbe Endpunkt in einem anderen Modus —
+es gibt keinen zweiten Codepfad, der auseinanderlaufen könnte.
+
+**Antwort**: `{ erfolg, probelauf, zeitraum, angelegt, geaendert, geloescht,
+unveraendert, details }`. `details` enthält je Rubrik bis zu 50 Einzelposten mit
+Titel und Startzeit für die Anzeige im Vorschau-Dialog.
+
+Statuscodes: `400` bei fremdem `format`, nicht unterstützter `format_version`,
+doppelten `uid`s oder unbekannter Kategorie.
+
 ## Admin only (`requireAuth` + `requireAdmin`)
 
 | Methode | Pfad | Beschreibung |
