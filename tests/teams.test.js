@@ -1,5 +1,5 @@
 // vitest globals are enabled (globals: true in vitest.config.js) — no import needed.
-const { TEAMS, teamsFromTitle, titleBelongsToTeam } = require('../server/teams');
+const { TEAMS, teamsFromTitle, titleBelongsToTeam, titleForTeam } = require('../server/teams');
 
 describe('teamsFromTitle', () => {
   it('erkennt ein einzelnes Jugend-Kürzel', () => {
@@ -93,5 +93,55 @@ describe('titleBelongsToTeam', () => {
   it('liefert false für unbekannte Teams', () => {
     expect(titleBelongsToTeam('U17 Training', 'U8')).toBe(false);
     expect(titleBelongsToTeam('U17 Training', '')).toBe(false);
+  });
+});
+
+describe('titleForTeam', () => {
+  it('schreibt ein gemeinsames Training auf das jeweilige Team um', () => {
+    // Ein Termin in Kalenderview (Abrechnung zählt einmal), zwei Titel in den
+    // Feeds — die Eltern sollen ihr eigenes Team sehen, nicht "U13/15".
+    expect(titleForTeam('U13/15 Training', 'U13')).toBe('U13 Training');
+    expect(titleForTeam('U13/15 Training', 'U15')).toBe('U15 Training');
+    expect(titleForTeam('U17/20 Training', 'U20')).toBe('U20 Training');
+  });
+
+  it('verträgt Leerzeichen um den Schrägstrich', () => {
+    expect(titleForTeam('U13 / 15 Training', 'U15')).toBe('U15 Training');
+  });
+
+  it('lässt Titel mit einzelnem Kürzel unverändert', () => {
+    expect(titleForTeam('U17 Heimspiel gegen Ratingen', 'U17')).toBe(
+      'U17 Heimspiel gegen Ratingen'
+    );
+    expect(titleForTeam('U15 Auswärtsspiel in Neuss', 'U15')).toBe('U15 Auswärtsspiel in Neuss');
+  });
+
+  it('lässt Wort-Teams unverändert', () => {
+    expect(titleForTeam('Damen Training', 'Damen')).toBe('Damen Training');
+    expect(titleForTeam('Goalies Training', 'Goalies')).toBe('Goalies Training');
+  });
+
+  it('lässt den Titel unverändert, wenn das Team nicht vorkommt', () => {
+    expect(titleForTeam('U13/15 Training', 'U17')).toBe('U13/15 Training');
+    expect(titleForTeam('U17 Training', 'U8')).toBe('U17 Training');
+  });
+
+  it('behält den Rest des Titels bei', () => {
+    expect(titleForTeam('Sondertraining U13/15 mit Torwarttrainer', 'U15')).toBe(
+      'Sondertraining U15 mit Torwarttrainer'
+    );
+  });
+
+  it('kommt mit leeren Eingaben klar', () => {
+    expect(titleForTeam('', 'U13')).toBe('');
+    expect(titleForTeam(null, 'U13')).toBe(null);
+  });
+
+  it('ist mehrfach hintereinander aufrufbar', () => {
+    // Regressionsschutz: YOUTH_PATTERN ist global, ein mitgeführter lastIndex
+    // würde beim zweiten Aufruf Treffer überspringen.
+    for (let i = 0; i < 3; i++) {
+      expect(titleForTeam('U13/15 Training', 'U13')).toBe('U13 Training');
+    }
   });
 });

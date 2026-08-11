@@ -128,6 +128,25 @@ U15-Eltern bekämen den Termin sonst nie. `U11A`/`U11B` zählen beide als `U11`.
 Unbekannte Kürzel werden verworfen, damit ein Vertipper keinen Feed für ein
 Phantom-Team erzeugt.
 
+#### Gemeinsame Trainings: ein Termin, zwei Feed-Einträge
+
+Der Regelfall ist ein Team pro Termin. Trainieren zwei Mannschaften gemeinsam
+auf demselben Eis, gilt bewusst eine andere Aufteilung:
+
+| | Was dort steht | Warum |
+|---|---|---|
+| **Kalenderview** (Hallenansicht, Abrechnung) | **ein** Termin `U13/15 Training` | Die Halle war einmal belegt. Zwei getrennte Termine würden die Eiszeit in der Abrechnung doppelt zählen |
+| **Team-Feeds** (Kalender der Eltern) | `U13 Training` im U13-Feed, `U15 Training` im U15-Feed | Eltern sollen ihr eigenes Team sehen. Wer beide Feeds abonniert hat, bekommt beide Einträge |
+
+Die Umschrift macht `titleForTeam()`. Titel mit einem einzelnen Kürzel und
+Wort-Teams bleiben dabei unverändert.
+
+> **Abhängigkeit vom Arbeitsablauf:** Hallenplanung führt U13 und U15 als
+> getrennte Teams und überträgt beim Grundstock deshalb **zwei** Serien. Laufen
+> die Einheiten parallel, müssen sie in Kalenderview von Hand zu einer
+> zusammengeführt werden (eine löschen, die andere auf `U13/15` umbenennen).
+> Unterbleibt das, zählt die Abrechnung die Eiszeit doppelt.
+
 ## Migrationen
 
 `migrate()` in `server/database.js` läuft bei jedem Start und ist idempotent:

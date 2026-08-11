@@ -80,4 +80,37 @@ function titleBelongsToTeam(title, team) {
   return teamsFromTitle(title).includes(canonical);
 }
 
-module.exports = { TEAMS, teamsFromTitle, titleBelongsToTeam };
+/**
+ * Titel, wie er im Feed eines einzelnen Teams erscheinen soll.
+ *
+ * Ein gemeinsames Training steht in Kalenderview als EIN Termin "U13/15
+ * Training" — die Halle war einmal belegt, die Abrechnung zählt einmal. In den
+ * Kalendern der Eltern soll aber das eigene Team stehen: Der U13-Feed liefert
+ * ihn als "U13 Training", der U15-Feed als "U15 Training".
+ *
+ * Umgeschrieben wird nur die kombinierte Kurzschreibweise. Titel mit einem
+ * einzelnen Kürzel ("U17 Heimspiel gegen Ratingen") und Wort-Teams ("Damen
+ * Training") bleiben unverändert.
+ *
+ * @param {string} title
+ * @param {string} team Kanonisches Kürzel, Groß-/Kleinschreibung egal
+ * @returns {string} Titel für diesen Feed; unverändert, wenn nichts zutrifft
+ */
+function titleForTeam(title, team) {
+  if (!title || typeof title !== 'string') return title;
+  const canonical = TEAMS.find(t => t.toLowerCase() === String(team).toLowerCase());
+  // Wort-Teams (Damen, Senioren, Goalies) kennen keine Kurzschreibweise.
+  if (!canonical || !/^U\d+$/.test(canonical)) return title;
+
+  // Eigene Regex-Instanz: YOUTH_PATTERN ist global und führt lastIndex mit.
+  const pattern = new RegExp(YOUTH_PATTERN.source, 'gi');
+  return title.replace(pattern, (match, first, rest) => {
+    const numbers = [first, ...(rest ? rest.split('/') : [])]
+      .map(n => n.trim())
+      .filter(n => n && YOUTH_NUMBERS.has(n))
+      .map(n => `U${n}`);
+    return numbers.includes(canonical) ? canonical : match;
+  });
+}
+
+module.exports = { TEAMS, teamsFromTitle, titleBelongsToTeam, titleForTeam };
