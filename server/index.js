@@ -60,6 +60,12 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/sync', require('./routes/sync'));
 
+// Öffentliche iCalendar-Feeds. Ohne /api-Präfix, weil die URL in
+// Kalender-Apps von Hand eingetragen wird und kurz bleiben soll. Muss vor
+// express.static und dem SPA-Fallback stehen, sonst fängt einer der beiden
+// die .ics-Pfade ab.
+app.use('/feeds', require('./routes/feeds'));
+
 // Config endpoint (public, returns calendar settings)
 app.get('/api/config', (req, res) => {
   res.json({

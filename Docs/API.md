@@ -75,6 +75,45 @@ deshalb größer sein als `gesamt.dauerMinuten`. `teamsHinweis` enthält dazu
 `mehrfachZugeordnet` (Anzahl solcher Termine) und einen fertigen Hinweistext für
 die Anzeige — ohne den wirkt die Auswertung fehlerhaft.
 
+## iCalendar-Feeds (kein Auth)
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| GET | `/feeds/halle.ics` | Alles, was die Halle belegt (`in_hall = 1`) |
+| GET | `/feeds/<Team>.ics` | Alle Termine eines Teams, **inklusive Auswärtsspiele**. Groß-/Kleinschreibung egal |
+| GET | `/feeds/` | Übersicht aller Feeds mit ihren URLs |
+
+Ohne `/api`-Präfix, weil die URL in Kalender-Apps von Hand eingetragen wird.
+Öffentlich wie die Kalenderansicht: Wer den Kalender sehen darf, darf ihn auch
+abonnieren.
+
+**Team-Feed gegen Hallen-Feed.** Der Hallen-Feed zeigt die Belegung und lässt
+Auswärtsspiele weg. Der Team-Feed zeigt die Termine einer Mannschaft und nimmt
+Auswärtsspiele mit — sie belegen die Halle nicht, sind für die Eltern aber
+genauso Termine. Ein gemeinsames Training heißt im Hallen-Feed weiter
+`U13/15 Training`, im U13-Feed dagegen `U13 Training` (siehe `titleForTeam` in
+[DATABASE.md](DATABASE.md)).
+
+**Format.** Erzeugt ohne Bibliothek in `server/routes/feeds.js`; die drei
+Regeln, an denen Kalender-Apps stillschweigend scheitern, stehen dort als
+Hilfsfunktionen:
+
+- **CRLF** als Zeilenende
+- **Faltung bei 75 Oktetten**, Folgezeilen mit führendem Leerzeichen. Gezählt
+  werden Bytes — Umlaute belegen in UTF-8 zwei
+- **Escaping** von `\`, `;`, `,` und Zeilenumbrüchen in Textwerten
+
+Dazu ein `VTIMEZONE`-Block für `Europe/Berlin`, damit die Termine auch über den
+Sommer-/Winterzeit-Wechsel richtig liegen, und `DTSTART;TZID=Europe/Berlin`
+statt UTC. Ganztägige Termine als `DTSTART;VALUE=DATE`.
+
+**UID**: der Fremdschlüssel aus Hallenplanung, sonst `kv-<id>`. Dadurch erkennen
+Abonnenten eine Verschiebung als Änderung und nicht als neuen Termin.
+
+**Umfang**: Termine ab einem Jahr in der Vergangenheit, ohne Ende nach vorn.
+`Cache-Control: max-age=300` — der Feed wird von vielen Geräten abgerufen, soll
+nach einer Absage aber nicht lange veraltet ausgeliefert werden.
+
 ## Abgleich mit Hallenplanung (JWT)
 
 | Methode | Pfad | Beschreibung |
