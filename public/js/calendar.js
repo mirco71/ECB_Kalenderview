@@ -15,6 +15,10 @@ let termineImBlick = [];
 
 function getMondayOfWeek(date) {
   const d = new Date(date);
+  // Auf Mitternacht normalisieren: Sonst trägt der Montag die aktuelle Uhrzeit,
+  // und die Wochenabfrage (end_time > Montag) verliert alle Montags-Termine, die
+  // vor der aktuellen Uhrzeit enden — die Woche sähe dann fälschlich leer aus.
+  d.setHours(0, 0, 0, 0);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   return new Date(d.setDate(diff));
