@@ -90,6 +90,64 @@ async function ladeKalender() {
   }
 }
 
+// ============ OVERLAP LAYOUT ============
+
+/**
+ * Weist überlappenden Terminen Spalten zu, damit sie nebeneinander statt
+ * deckungsgleich übereinander dargestellt werden. Liefert eine Map von
+ * Termin-ID auf { col, cols }: die Spalte des Termins und die Gesamtzahl der
+ * Spalten seiner Überlappungsgruppe. Ganztägige Termine bleiben außen vor.
+ *
+ * Termine verschiedener Tage überlappen zeitlich nie (die Zeitstempel liegen
+ * mindestens einen Tag auseinander), deshalb trennt die reine Intervall-Logik
+ * die Tage von selbst.
+ */
+function berechneUeberlappungsLayout(termine) {
+  const layout = new Map();
+  const timed = termine
+    .filter(t => !t.ganztaegig)
+    .slice()
+    .sort((a, b) => a.start - b.start || a.ende - b.ende);
+
+  let cluster = [];
+  let clusterEnde = -Infinity;
+
+  const flush = () => {
+    if (cluster.length === 0) return;
+    // Endzeit des jeweils zuletzt einsortierten Termins je Spalte.
+    const spaltenEnde = [];
+    for (const ev of cluster) {
+      let platziert = false;
+      for (let c = 0; c < spaltenEnde.length; c++) {
+        if (ev.start >= spaltenEnde[c]) {
+          spaltenEnde[c] = ev.ende;
+          layout.set(ev.id, { col: c, cols: 0 });
+          platziert = true;
+          break;
+        }
+      }
+      if (!platziert) {
+        spaltenEnde.push(ev.ende);
+        layout.set(ev.id, { col: spaltenEnde.length - 1, cols: 0 });
+      }
+    }
+    for (const ev of cluster) layout.get(ev.id).cols = spaltenEnde.length;
+    cluster = [];
+    clusterEnde = -Infinity;
+  };
+
+  for (const ev of timed) {
+    // Beginnt der Termin erst nach dem Ende der ganzen bisherigen Gruppe,
+    // fängt eine neue Überlappungsgruppe an.
+    if (ev.start >= clusterEnde) flush();
+    cluster.push(ev);
+    clusterEnde = Math.max(clusterEnde, ev.ende);
+  }
+  flush();
+
+  return layout;
+}
+
 // ============ RENDER CALENDAR ============
 
 function zeigeKalender(result) {
@@ -110,6 +168,9 @@ function zeigeKalender(result) {
   heute.setHours(0, 0, 0, 0);
 
   let html = '';
+
+  // Spalten-Zuordnung für überlappende Termine (einmal pro Woche berechnet).
+  const spaltenLayout = berechneUeberlappungsLayout(result.termine);
 
   // Collect all-day events for inline rendering in day columns
   const ganztaegigTermine = result.termine.filter(t => t.ganztaegig);
@@ -214,9 +275,18 @@ function zeigeKalender(result) {
           const height = (durationMinutes / 60) * 60;
 
           const seriesBadge = termin.series_id ? ' 🔁' : '';
+
+          // Überlappende Termine nebeneinander legen: Breite und Versatz aus der
+          // Spalten-Zuordnung. Einzelne Termine bleiben unangetastet (volle
+          // Breite über das CSS: left/right = 2px).
+          const spalte = spaltenLayout.get(termin.id);
+          const spaltenStil = spalte && spalte.cols > 1
+            ? ` left: calc(${spalte.col} / ${spalte.cols} * 100% + 2px); width: calc(100% / ${spalte.cols} - 4px); right: auto;`
+            : '';
+
           html += `
             <div class="event"
-                 style="top: ${topOffset}px; height: ${Math.max(height, 20)}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
+                 style="top: ${topOffset}px; height: ${Math.max(height, 20)}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};${spaltenStil}"
                  title="${escapeHtml(termin.beschreibung || termin.titel)}${termin.series_id ? ' (Wochenserie)' : ''}">
               ${loeschButton(termin)}
               <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
