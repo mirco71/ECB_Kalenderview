@@ -476,6 +476,12 @@ function renderSeriesModal() {
   ).join('');
   catSelect.value = serie.category_id;
 
+  const wdSelect = document.getElementById('seriesEditWeekday');
+  wdSelect.innerHTML = WEEKDAY_NAMES.map((name, i) =>
+    `<option value="${i}">${escapeHtml(name)}</option>`
+  ).join('');
+  wdSelect.value = String(serie.wochentag);
+
   document.getElementById('seriesEventsBody').innerHTML = termine.map(t => {
     const start = new Date(t.start);
     const end = new Date(t.ende);
@@ -564,12 +570,22 @@ async function saveSeriesHeader() {
   const newFrom = document.getElementById('seriesEditTimeFrom').value;
   const newTo = document.getElementById('seriesEditTimeTo').value;
   const timeChanged = newFrom !== serie.zeitVon || newTo !== serie.zeitBis;
+  const newWeekday = parseInt(document.getElementById('seriesEditWeekday').value);
+  const weekdayChanged = newWeekday !== serie.wochentag;
   const deviating = openSeries.termine.filter(t => t.abweichend).length;
 
   if (timeChanged && deviating > 0) {
     const ok = confirm(
       `${deviating} Termin(e) dieser Serie haben eine abweichende Uhrzeit.\n\n` +
       `Beim Übernehmen werden sie auf ${newFrom}–${newTo} Uhr zurückgesetzt.\n\nFortfahren?`
+    );
+    if (!ok) return;
+  }
+
+  if (weekdayChanged) {
+    const ok = confirm(
+      `Alle ${openSeries.termine.length} Termine der Serie werden von ${WEEKDAY_NAMES[serie.wochentag]} ` +
+      `auf ${WEEKDAY_NAMES[newWeekday]} verschoben (jeweils in ihrer Woche). Die Uhrzeiten bleiben.\n\nFortfahren?`
     );
     if (!ok) return;
   }
@@ -583,6 +599,7 @@ async function saveSeriesHeader() {
       data.time_from = newFrom;
       data.time_to = newTo;
     }
+    if (weekdayChanged) data.weekday = newWeekday;
     openSeries = await API.updateSeries(serie.id, data);
     showToast('Serie aktualisiert');
     renderSeriesModal();

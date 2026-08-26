@@ -322,6 +322,30 @@ describe('Events API', () => {
     }
   });
 
+  it('should move every event to a new weekday when the series weekday changes', async () => {
+    const before = await req('GET', `/api/events/series/${seriesId}`, null, adminToken);
+    const anzahlVorher = before.body.termine.length;
+    const stundeVorher = new Date(before.body.termine[0].start).getHours();
+    const minuteVorher = new Date(before.body.termine[0].start).getMinutes();
+
+    // Dienstag (2) -> Mittwoch (3)
+    const res = await req('PUT', `/api/events/series/${seriesId}`, {
+      weekday: 3,
+    }, adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.serie.wochentag).toBe(3);
+    expect(res.body.termine).toHaveLength(anzahlVorher);
+
+    for (const t of res.body.termine) {
+      const start = new Date(t.start);
+      expect(start.getDay()).toBe(3); // jetzt Mittwoch
+      // Uhrzeit bleibt, weil kein time_from/time_to mitgeschickt wurde
+      expect(start.getHours()).toBe(stundeVorher);
+      expect(start.getMinutes()).toBe(minuteVorher);
+    }
+  });
+
   it('should rename every event when the series title changes', async () => {
     const res = await req('PUT', `/api/events/series/${seriesId}`, {
       title: 'Training Damen',

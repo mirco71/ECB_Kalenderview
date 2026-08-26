@@ -336,6 +336,7 @@ router.put(
   [
     body('title').optional().trim().notEmpty().withMessage('Titel darf nicht leer sein'),
     body('category_id').optional().isInt({ min: 1 }),
+    body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('Wochentag muss zwischen 0 (So) und 6 (Sa) liegen'),
     body('time_from').optional().matches(TIME_PATTERN).withMessage('Ungültige Startzeit (z.B. 18:00)'),
     body('time_to').optional().matches(TIME_PATTERN).withMessage('Ungültige Endzeit (z.B. 20:00)'),
     body('description').optional().trim(),
@@ -357,6 +358,7 @@ router.put(
     const updates = {
       title: req.body.title ?? existing.title,
       category_id: req.body.category_id != null ? parseInt(req.body.category_id) : existing.category_id,
+      weekday: req.body.weekday != null ? parseInt(req.body.weekday) : existing.weekday,
       time_from: req.body.time_from ?? existing.time_from,
       time_to: req.body.time_to ?? existing.time_to,
       description: req.body.description ?? existing.description,
@@ -374,12 +376,37 @@ router.put(
       }
     }
 
+    const timeChanged = (req.body.time_from != null && req.body.time_from !== existing.time_from) ||
+                        (req.body.time_to != null && req.body.time_to !== existing.time_to);
+
+    // Wochentag-Wechsel: Alle Termine wandern in ihrer Woche auf den neuen Tag.
+    // Gerechnet wird über einen montagsbasierten Index (Mo=0..So=6), damit die
+    // Termine in derselben Mo–So-Woche bleiben — so, wie der Kalender die Woche
+    // darstellt. Ein reiner getDay()-Vergleich würde einen Montag beim Wechsel
+    // auf Sonntag in die Vorwoche schieben.
+    const weekdayChanged = updates.weekday !== existing.weekday;
+    const montagsIndex = w => (w + 6) % 7;
+    const deltaTage = weekdayChanged
+      ? montagsIndex(updates.weekday) - montagsIndex(existing.weekday)
+      : 0;
+
+    const verschiebeDatum = (dateStr, tage) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + tage);
+      return toLocalDateString(dt);
+    };
+
+    const neuesDatumVon = weekdayChanged ? verschiebeDatum(existing.date_from, deltaTage) : existing.date_from;
+    const neuesDatumBis = weekdayChanged ? verschiebeDatum(existing.date_to, deltaTage) : existing.date_to;
+
     db.prepare(
-      `UPDATE series SET title = ?, category_id = ?, time_from = ?, time_to = ?,
-       description = ?, location = ?, updated_at = datetime('now') WHERE id = ?`
+      `UPDATE series SET title = ?, category_id = ?, weekday = ?, time_from = ?, time_to = ?,
+       date_from = ?, date_to = ?, description = ?, location = ?, updated_at = datetime('now')
+       WHERE id = ?`
     ).run(
-      updates.title, updates.category_id, updates.time_from, updates.time_to,
-      updates.description, updates.location, seriesId
+      updates.title, updates.category_id, updates.weekday, updates.time_from, updates.time_to,
+      neuesDatumVon, neuesDatumBis, updates.description, updates.location, seriesId
     );
 
     db.prepare(
@@ -387,22 +414,32 @@ router.put(
        updated_at = datetime('now') WHERE series_id = ?`
     ).run(updates.title, updates.category_id, updates.description, updates.location, seriesId);
 
-    // Rewriting the times means recomputing each event's timestamps from its own
-    // date, so the series keeps its wall-clock time across a DST change.
-    const timeChanged = (req.body.time_from != null && req.body.time_from !== existing.time_from) ||
-                        (req.body.time_to != null && req.body.time_to !== existing.time_to);
-    if (timeChanged) {
+    // Datum und/oder Uhrzeit der Einzeltermine neu berechnen. Das Datum kommt
+    // aus dem eigenen Datum jedes Termins (plus Wochentag-Verschiebung), die
+    // Uhrzeit bei einer Zeitänderung aus der neuen Serienzeit, sonst aus der
+    // bisherigen Zeit des Termins. So bleibt die Wandzeit über einen Sommer-/
+    // Winterzeit-Wechsel erhalten, und ein reiner Wochentag-Wechsel lässt eine
+    // abweichend eingestellte Uhrzeit unangetastet.
+    if (weekdayChanged || timeChanged) {
       const events = db
-        .prepare('SELECT id, start_time FROM events WHERE series_id = ?')
+        .prepare('SELECT id, start_time, end_time FROM events WHERE series_id = ?')
         .all(seriesId);
 
       for (const ev of events) {
-        const day = toLocalDateString(new Date(ev.start_time));
-        const start = localDateTime(day, updates.time_from);
-        const end = localDateTime(day, updates.time_to);
+        const start = new Date(ev.start_time);
+        const end = new Date(ev.end_time);
+
+        let tag = toLocalDateString(start);
+        if (deltaTage !== 0) tag = verschiebeDatum(tag, deltaTage);
+
+        const von = timeChanged ? updates.time_from : toLocalTimeString(start);
+        const bis = timeChanged ? updates.time_to : toLocalTimeString(end);
+
+        const neuStart = localDateTime(tag, von);
+        const neuEnde = localDateTime(tag, bis);
         db.prepare(
           `UPDATE events SET start_time = ?, end_time = ?, updated_at = datetime('now') WHERE id = ?`
-        ).run(start.toISOString(), end.toISOString(), ev.id);
+        ).run(neuStart.toISOString(), neuEnde.toISOString(), ev.id);
       }
     }
 
