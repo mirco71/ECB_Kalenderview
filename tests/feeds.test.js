@@ -189,6 +189,26 @@ describe('iCalendar-Feeds', () => {
     expect(res.body).toContain('SUMMARY:U13/15 Training');
   });
 
+  it('fasst a/b-Untermannschaften im Team-Feed zu einem Training zusammen', async () => {
+    // U11a und U11b trainieren zusammen: zwei gleichzeitige Trainings.
+    insertEvent({ title: 'U11a Training', start: inDays(4, 17), end: inDays(4, 18) });
+    insertEvent({ title: 'U11b Training', start: inDays(4, 17), end: inDays(4, 18) });
+    // Spiele sind echte, getrennte Spiele und behalten a/b (mit Hallenplanungs-UID).
+    insertEvent({ title: 'U11a Heimspiel gegen Aachen', start: inDays(6, 10), end: inDays(6, 12), location: 'Solingen', uid: 'hp-u11a-1' });
+    insertEvent({ title: 'U11b Heimspiel gegen Moers', start: inDays(6, 13), end: inDays(6, 15), location: 'Solingen', uid: 'hp-u11b-1' });
+
+    const res = await get('/feeds/u11.ics');
+    const training = res.body.split('\r\n').filter(z => z === 'SUMMARY:U11 Training');
+
+    // Das Doppel-Training erscheint genau einmal, ohne a/b.
+    expect(training).toHaveLength(1);
+    expect(res.body).not.toContain('SUMMARY:U11a Training');
+    expect(res.body).not.toContain('SUMMARY:U11b Training');
+    // Spiele bleiben getrennt und behalten a/b.
+    expect(res.body).toContain('SUMMARY:U11a Heimspiel gegen Aachen');
+    expect(res.body).toContain('SUMMARY:U11b Heimspiel gegen Moers');
+  });
+
   it('lässt lange vergangene Termine weg', async () => {
     const res = await get('/feeds/u17.ics');
     expect(res.body).not.toContain('gegen Alt');

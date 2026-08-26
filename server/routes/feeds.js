@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDb } = require('../database');
 const config = require('../config');
-const { TEAMS, teamsFromTitle, titleForTeam } = require('../teams');
+const { TEAMS, teamsFromTitle, titleForTeam, stripSubTeam } = require('../teams');
 
 const router = express.Router();
 
@@ -209,6 +209,42 @@ router.get('/halle.ics', (req, res) => {
   );
 });
 
+/**
+ * Bereitet die Termine eines Team-Feeds auf.
+ *
+ * Spiele bleiben unverändert (sie tragen eine stabile Hallenplanungs-UID in
+ * external_uid und sind echte, getrennte Spiele — U11a und U11b spielen für
+ * sich). Trainings verlieren den Untermannschafts-Buchstaben, damit a/b-Teams
+ * unter einem Team erscheinen ("U11a Training" -> "U11 Training"). Trainieren
+ * U11a und U11b zusammen, liefert Hallenplanung zwei gleichzeitige Trainings;
+ * nach dem Umschreiben sind sie identisch und werden zu einem Eintrag
+ * zusammengefasst, sonst stünde er doppelt im Kalender.
+ *
+ * Sortiert nach Startzeit und ID, damit bei einem Doppel-Training stabil
+ * derselbe Termin (die kleinere ID) übrig bleibt — sonst würde der Abgleich
+ * ihn bei jedem Lauf löschen und neu anlegen.
+ */
+function fasseTeamTrainingsZusammen(rows, team) {
+  const sortiert = rows
+    .slice()
+    .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)) || a.id - b.id);
+
+  const gesehen = new Set();
+  const zeilen = [];
+  for (const row of sortiert) {
+    const istSpiel = !!row.external_uid;
+    let titel = titleForTeam(row.title, team);
+    if (!istSpiel) {
+      titel = stripSubTeam(titel, team);
+      const schluessel = `${titel}|${row.start_time}|${row.end_time}`;
+      if (gesehen.has(schluessel)) continue;
+      gesehen.add(schluessel);
+    }
+    zeilen.push({ ...row, _feedTitel: titel });
+  }
+  return { zeilen, titelFuer: row => row._feedTitel };
+}
+
 // GET /feeds/<Team>.ics — alle Termine eines Teams, auch Auswärtsspiele
 router.get('/:name.ics', (req, res) => {
   const team = TEAMS.find(t => t.toLowerCase() === req.params.name.toLowerCase());
@@ -222,12 +258,15 @@ router.get('/:name.ics', (req, res) => {
   // sind für die Eltern aber genauso Termine wie ein Heimspiel.
   const rows = loadEvents().filter(e => teamsFromTitle(e.title).includes(team));
 
+  const { zeilen, titelFuer } = fasseTeamTrainingsZusammen(rows, team);
+
   sendCalendar(
     res,
     `${team.toLowerCase()}.ics`,
-    // Ein gemeinsames Training heißt in Kalenderview "U13/15 Training",
-    // im U13-Feed aber "U13 Training" — die Eltern sollen ihr Team sehen.
-    buildCalendar(`ECB ${team}`, rows, row => titleForTeam(row.title, team))
+    // Ein gemeinsames Training heißt in Kalenderview "U13/15 Training", im
+    // U13-Feed aber "U13 Training". Untermannschaften wie U11a/U11b laufen als
+    // "U11", gleichzeitige Doppel-Trainings werden zusammengefasst.
+    buildCalendar(`ECB ${team}`, zeilen, titelFuer)
   );
 });
 

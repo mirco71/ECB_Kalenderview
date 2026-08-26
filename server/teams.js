@@ -113,4 +113,26 @@ function titleForTeam(title, team) {
   });
 }
 
-module.exports = { TEAMS, teamsFromTitle, titleBelongsToTeam, titleForTeam };
+/**
+ * Entfernt den Untermannschafts-Buchstaben eines Jugend-Teams aus dem Titel,
+ * z.B. "U11a Training" -> "U11 Training". U11a und U11b sind organisatorisch
+ * getrennt (zwei gemeldete Mannschaften für mehr Spielzeit), teilen sich aber
+ * Training und Kalender; im Feed sollen sie deshalb schlicht als "U11"
+ * erscheinen. Greift nur für Jugendteams (U<Zahl>) und nur auf den passenden
+ * Jahrgang; Wort-Teams und andere Jahrgänge bleiben unberührt.
+ *
+ * @param {string} title
+ * @param {string} team Kanonisches Kürzel, Groß-/Kleinschreibung egal
+ */
+function stripSubTeam(title, team) {
+  if (!title || typeof title !== 'string') return title;
+  const canonical = TEAMS.find(t => t.toLowerCase() === String(team).toLowerCase());
+  if (!canonical || !/^U\d+$/.test(canonical)) return title;
+  const num = canonical.slice(1);
+  // Ein oder mehrere Buchstaben direkt hinter der Jahrgangszahl sind der
+  // Untermannschafts-Zusatz ("U11a", "U11B"); eine reine "U11" ohne Buchstaben
+  // bleibt unverändert.
+  return title.replace(new RegExp(`U\\s*${num}[A-Za-z]+`, 'gi'), canonical);
+}
+
+module.exports = { TEAMS, teamsFromTitle, titleBelongsToTeam, titleForTeam, stripSubTeam };
