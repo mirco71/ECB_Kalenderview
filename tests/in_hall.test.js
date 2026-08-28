@@ -232,11 +232,15 @@ describe('in_hall — Hallenbelegung vs. Team-Kalender', () => {
       expect(beteiligt).not.toContain('U17 Training');
     });
 
-    it('zeigt die Doppelzählung in der Gesamtsumme', async () => {
-      // 3 × 90 Minuten gezählt, tatsächlich belegt waren nur 180.
+    it('weist die belegte Zeit aus, nicht die Summe der Einheiten', async () => {
+      // 3 × 90 Minuten als Einheiten, aber U13 und U15 liegen deckungsgleich:
+      // belegt war das Eis nur 180 Minuten. Genau die werden abgerechnet.
       const res = await req('GET', `/api/stats?${range}&category_ids=7`, null, adminToken);
-      expect(res.body.gesamt.dauerMinuten).toBe(270);
-      expect(res.body.gesamt.dauerMinuten - res.body.ueberschneidungen.minuten).toBe(180);
+      expect(res.body.gesamt.dauerMinuten).toBe(180);
+      expect(res.body.gesamt.dauerBruttoMinuten).toBe(270);
+      // Die Differenz ist genau die gemeldete Überschneidung.
+      expect(res.body.gesamt.dauerBruttoMinuten - res.body.ueberschneidungen.minuten)
+        .toBe(res.body.gesamt.dauerMinuten);
     });
   });
 });

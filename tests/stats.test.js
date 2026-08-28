@@ -169,4 +169,57 @@ describe('Stats API', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  // Abgerechnet wird die belegte Eiszeit, nicht die Summe der Einheiten:
+  // U11a und U11b trainieren zusammen, U13 und U15 ebenso. Ohne Vereinigung
+  // der Zeitintervalle waere die ausgewiesene Stundenzahl zu hoch.
+  describe('Belegte Hallenzeit (netto)', () => {
+    it('zaehlt gleichzeitige Termine nur einmal, sich beruehrende voll', async () => {
+      const tag = [
+        ['U11a Training', '2026-08-04T17:00:00.000Z', '2026-08-04T18:00:00.000Z'],     // 60
+        ['U11b Training', '2026-08-04T17:00:00.000Z', '2026-08-04T18:00:00.000Z'],     // 60, deckungsgleich
+        ['U13 Training', '2026-08-04T18:15:00.000Z', '2026-08-04T19:30:00.000Z'],      // 75
+        ['U15 Training', '2026-08-04T18:15:00.000Z', '2026-08-04T19:30:00.000Z'],      // 75, deckungsgleich
+        ['Senioren Training', '2026-08-04T20:00:00.000Z', '2026-08-04T21:00:00.000Z'], // 60
+        ['Herren Training', '2026-08-04T21:00:00.000Z', '2026-08-04T22:00:00.000Z'],   // 60, schliesst direkt an
+      ];
+      for (const [title, start_time, end_time] of tag) {
+        await req('POST', '/api/events', { title, start_time, end_time, category_id: 7 }, adminToken);
+      }
+
+      const r = 'start=2026-08-01T00:00:00.000Z&end=2026-08-05T00:00:00.000Z';
+      const res = await req('GET', `/api/stats?${r}&category_ids=7`, null, adminToken);
+
+      expect(res.status).toBe(200);
+      // 60 + 75 + 60 + 60 — die beiden Doppel zaehlen einmal, der anschliessende
+      // Termin voll, weil Beruehren keine Ueberschneidung ist.
+      expect(res.body.gesamt.dauerMinuten).toBe(255);
+      expect(res.body.gesamt.dauerBruttoMinuten).toBe(390);
+
+      const ecb = res.body.gruppen.find(g => g.category_id === 7);
+      expect(ecb.anzahl).toBe(6);
+      expect(ecb.dauerMinuten).toBe(255);
+      expect(ecb.dauerBruttoMinuten).toBe(390);
+
+      // Die Warnung bleibt: Sie zeigt, welche Einheiten parallel laufen.
+      expect(res.body.ueberschneidungen.anzahl).toBe(2);
+    });
+
+    it('vereinigt auch teilweise ueberlappende Termine', async () => {
+      const tag = [
+        ['Training frueh', '2026-08-10T17:00:00.000Z', '2026-08-10T18:00:00.000Z'],
+        ['Training spaet', '2026-08-10T17:30:00.000Z', '2026-08-10T19:00:00.000Z'],
+      ];
+      for (const [title, start_time, end_time] of tag) {
+        await req('POST', '/api/events', { title, start_time, end_time, category_id: 7 }, adminToken);
+      }
+
+      const r = 'start=2026-08-09T00:00:00.000Z&end=2026-08-11T00:00:00.000Z';
+      const res = await req('GET', `/api/stats?${r}&category_ids=7`, null, adminToken);
+
+      // 17:00 bis 19:00 am Stueck, nicht 60 + 90.
+      expect(res.body.gesamt.dauerMinuten).toBe(120);
+      expect(res.body.gesamt.dauerBruttoMinuten).toBe(150);
+    });
+  });
 });

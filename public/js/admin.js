@@ -915,10 +915,18 @@ async function runStats() {
 
 function renderStats(result, start, end) {
   const summary = document.getElementById('statsSummary');
+  // Die Bruttosumme nur zeigen, wenn sie abweicht — sonst wäre sie eine
+  // verwirrende Dopplung. Die Differenz ist genau die Zeit, in der mehrere
+  // Einheiten gleichzeitig auf dem Eis waren.
+  const brutto = result.gesamt.dauerBruttoMinuten;
+  const bruttoKarte = (brutto != null && Math.round(brutto) !== Math.round(result.gesamt.dauerMinuten))
+    ? `<div class="stats-card"><div class="stats-label">Summe der Einheiten</div><div class="stats-value">${escapeHtml(formatDauer(brutto))}</div></div>`
+    : '';
   summary.innerHTML = `
     <div class="stats-card"><div class="stats-label">Zeitraum</div><div class="stats-value">${escapeHtml(formatDatum(start))} – ${escapeHtml(formatDatum(end))}</div></div>
     <div class="stats-card"><div class="stats-label">Analysierte Termine</div><div class="stats-value">${result.gesamt.anzahl}</div></div>
-    <div class="stats-card"><div class="stats-label">Gesamtdauer</div><div class="stats-value">${escapeHtml(formatDauer(result.gesamt.dauerMinuten))}</div></div>
+    <div class="stats-card"><div class="stats-label">Belegte Hallenzeit</div><div class="stats-value">${escapeHtml(formatDauer(result.gesamt.dauerMinuten))}</div></div>
+    ${bruttoKarte}
   `;
 
   const rows = [];
@@ -928,7 +936,7 @@ function renderStats(result, start, end) {
         <td><span class="color-preview" style="background:${escapeHtml(g.color_hex)}"></span>${escapeHtml(g.name)}</td>
         <td style="text-align:right">${g.anzahl}</td>
         <td style="text-align:right"><strong>${escapeHtml(formatDauer(g.dauerMinuten))}</strong></td>
-        <td style="text-align:right">${escapeHtml(formatDauer(g.dauerMinuten / g.anzahl))}</td>
+        <td style="text-align:right">${escapeHtml(formatDauer((g.dauerBruttoMinuten ?? g.dauerMinuten) / g.anzahl))}</td>
       </tr>
     `);
     if (g.titel) {
@@ -955,10 +963,10 @@ function renderStats(result, start, end) {
   document.getElementById('statsCsvBtn').style.display = rows.length ? '' : 'none';
 }
 
-// Warnt vor gleichzeitigen Terminen: Die Halle war einmal belegt, die Summe
-// zählt zweimal. Häufigster Grund sind parallele Trainings, die noch nicht zu
-// einem Termin zusammengeführt wurden. Ohne diesen Hinweis fiele der zu hohe
-// Wert niemandem auf — er sieht plausibel aus.
+// Zeigt gleichzeitige Termine an. Für die abgerechnete Zeit sind sie
+// unschädlich (die zählt jede belegte Minute einmal), aber der Hinweis macht
+// sichtbar, welche Einheiten parallel laufen — etwa gemeinsame Trainings
+// mehrerer Mannschaften.
 function renderUeberschneidungen(ueb) {
   const box = document.getElementById('statsUeberschneidungen');
   if (!box) return;
@@ -984,9 +992,8 @@ function renderUeberschneidungen(ueb) {
   box.innerHTML = `
     <strong>⚠ ${ueb.anzahl} zeitliche Überschneidung${ueb.anzahl === 1 ? '' : 'en'}
     (${escapeHtml(formatDauer(ueb.minuten))})</strong>
-    <p>Gleichzeitige Termine zählen doppelt, obwohl die Halle nur einmal belegt war.
-    Häufigste Ursache: parallele Trainings, die noch nicht zu einem Termin
-    zusammengeführt wurden.</p>
+    <p>Die belegte Hallenzeit oben zählt diese Zeit nur einmal. Häufigste Ursache:
+    parallele Trainings, etwa gemeinsame Einheiten mehrerer Mannschaften.</p>
     <ul>${faelle}${weitere}</ul>
   `;
   box.style.display = '';
@@ -1000,7 +1007,7 @@ function formatDatum(isoDate) {
 function exportStatsCsv() {
   if (!lastStats) return;
 
-  const lines = ['Kategorie;Titel;Anzahl;Dauer (Minuten);Dauer (formatiert)'];
+  const lines = ['Kategorie;Titel;Anzahl;Belegte Zeit (Minuten);Belegte Zeit (formatiert)'];
   for (const g of lastStats.gruppen) {
     lines.push(`${csvEscape(g.name)};;${g.anzahl};${Math.round(g.dauerMinuten)};${csvEscape(formatDauer(g.dauerMinuten))}`);
     if (g.titel) {

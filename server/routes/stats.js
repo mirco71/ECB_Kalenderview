@@ -12,10 +12,10 @@ const MAX_UEBERSCHNEIDUNGEN = 20;
 /**
  * Findet zeitliche Überschneidungen unter den gezählten Terminen.
  *
- * Zwei Termine, die gleichzeitig auf demselben Eis liegen, blähen die Summe
- * auf: Die Halle war einmal belegt, gezählt wird zweimal. Häufigster Grund
- * sind parallele Trainings, die nach dem Grundstock aus Hallenplanung noch
- * nicht zu einem Termin zusammengeführt wurden (siehe Docs/DATABASE.md).
+ * Zwei Termine, die gleichzeitig auf demselben Eis liegen, sind für die
+ * abgerechnete Zeit unschädlich — die zählt jede belegte Minute nur einmal
+ * (siehe belegteMinuten). Die Liste bleibt trotzdem wichtig: Sie zeigt, welche
+ * Einheiten parallel laufen, etwa gemeinsame Trainings mehrerer Mannschaften.
  *
  * Erkannt wird über alle ausgewählten Kategorien hinweg, denn für die Frage
  * "ist diese Summe belastbar" ist es gleich, ob sich zwei ECB-Trainings oder
@@ -66,11 +66,43 @@ function findeUeberschneidungen(events) {
     weitere: Math.max(0, anzahl - faelle.length),
     text: anzahl
       ? `${anzahl} Überschneidung(en) mit zusammen ${minutenGesamt} Minuten. ` +
-        'Gleichzeitige Termine zählen doppelt, obwohl die Halle nur einmal belegt war. ' +
-        'Häufigste Ursache: parallele Trainings, die noch nicht zu einem Termin ' +
-        'zusammengeführt wurden.'
+        'Die belegte Hallenzeit zählt diese Zeit nur einmal. Häufigste Ursache: ' +
+        'parallele Trainings, etwa gemeinsame Einheiten mehrerer Mannschaften.'
       : null,
   };
+}
+
+/**
+ * Summiert die tatsaechlich belegte Zeit einer Terminmenge in Minuten.
+ *
+ * Gleichzeitige Termine zaehlen nur einmal: Die Zeitintervalle werden
+ * vereinigt, bevor summiert wird. Das ist die Zahl, um die es bei der
+ * Abrechnung geht, denn die Halle ist einmal belegt, egal wie viele
+ * Mannschaften gleichzeitig auf dem Eis stehen. U11a und U11b trainieren
+ * zusammen, U13 und U15 ebenso; ohne Vereinigung waere die ausgewiesene
+ * Stundenzahl zu hoch.
+ *
+ * Termine, die sich nur beruehren (einer endet 18:00, der naechste beginnt
+ * 18:00), ergeben zwei getrennte Bloecke und zaehlen beide voll.
+ */
+function belegteMinuten(events) {
+  const intervalle = events
+    .map(e => [new Date(e.start_time).getTime(), new Date(e.end_time).getTime()])
+    .filter(([von, bis]) => bis > von)
+    .sort((a, b) => a[0] - b[0]);
+
+  let summe = 0;
+  let von = null;
+  let bis = null;
+  for (const [start, ende] of intervalle) {
+    if (von === null) { von = start; bis = ende; continue; }
+    if (start <= bis) { bis = Math.max(bis, ende); continue; }
+    summe += bis - von;
+    von = start;
+    bis = ende;
+  }
+  if (von !== null) summe += bis - von;
+  return summe / 60000;
 }
 
 // GET /api/stats?start=ISO&end=ISO&category_ids=2,5,7,8,11[&group_by_team=1]
@@ -156,6 +188,8 @@ router.get(
           color_hex: ev.category_color,
           anzahl: 0,
           dauerMinuten: 0,
+          // Fuer die Netto-Belegung: die Termine der Kategorie selbst.
+          termine: [],
           // Aufschlüsselung nach Titel nur, wenn die Kategorie so konfiguriert ist
           titel: ev.group_by_title === 1 ? new Map() : null,
         });
@@ -164,6 +198,7 @@ router.get(
       const gruppe = gruppen.get(ev.category_id);
       gruppe.anzahl++;
       gruppe.dauerMinuten += dauer;
+      gruppe.termine.push(ev);
 
       if (gruppe.titel) {
         if (!gruppe.titel.has(ev.title)) {
@@ -186,18 +221,33 @@ router.get(
         name: g.name,
         color_hex: g.color_hex,
         anzahl: g.anzahl,
-        dauerMinuten: g.dauerMinuten,
+        // Abgerechnet wird die belegte Zeit: gleichzeitige Termine derselben
+        // Kategorie zaehlen einmal. Die Bruttosumme bleibt daneben stehen,
+        // damit die Aufschluesselung je Einheit nachvollziehbar bleibt.
+        dauerMinuten: belegteMinuten(g.termine),
+        dauerBruttoMinuten: g.dauerMinuten,
         titel: g.titel
           ? Array.from(g.titel.values()).sort((a, b) => a.titel.localeCompare(b.titel))
           : null,
       }));
+
+    // Gesamt = Summe der Kategorie-Nettos, damit sich die Tabelle aufaddiert.
+    // Bewusst nicht die Vereinigung ueber alle Kategorien hinweg: Jede
+    // Kategorie wird fuer sich abgerechnet, und eine Ueberschneidung zwischen
+    // zwei Kategorien waere eine Doppelbuchung, die nicht stillschweigend
+    // verschwinden darf.
+    const gesamtNetto = ergebnis.reduce((n, g) => n + g.dauerMinuten, 0);
 
     const antwort = {
       erfolg: true,
       zeitraum: { start, end },
       termineGesamt: events.length,
       gruppen: ergebnis,
-      gesamt: { anzahl: gesamtAnzahl, dauerMinuten: gesamtDauer },
+      gesamt: {
+        anzahl: gesamtAnzahl,
+        dauerMinuten: gesamtNetto,
+        dauerBruttoMinuten: gesamtDauer,
+      },
       ueberschneidungen: findeUeberschneidungen(gezaehlt),
     };
 
