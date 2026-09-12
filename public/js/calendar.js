@@ -10,6 +10,10 @@ let endStunde = 23;
 // löschen — die API erlaubt beiden Rollen das Löschen.
 let darfBearbeiten = false;
 let termineImBlick = [];
+// 'woche' oder 'monat'. Die Wahl überlebt einen Reload.
+let ansichtsModus = localStorage.getItem('ecb_ansicht') === 'monat' ? 'monat' : 'woche';
+// In der Monatsansicht der Tag, den das Tagespanel zeigt (Standard: heute).
+let gewaehlterTag = null;
 
 // ============ DATE UTILITIES ============
 
@@ -47,26 +51,96 @@ function formatZeit(date) {
   });
 }
 
+/**
+ * Lokales YYYY-MM-DD. Bewusst nicht über toISOString(), das nach UTC umrechnet
+ * und abends den Vortag liefern würde.
+ */
+function toLocalDate(date) {
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+function istGleicherTag(a, b) {
+  return a.getFullYear() === b.getFullYear() &&
+         a.getMonth() === b.getMonth() &&
+         a.getDate() === b.getDate();
+}
+
 // ============ NAVIGATION ============
 
-function vorherigeWoche() {
+// Die Pfeile bewegen sich in der Einheit der aktuellen Ansicht.
+function zurueck() {
+  if (ansichtsModus === 'monat') return vorherigerMonat();
   aktuellesDatum.setDate(aktuellesDatum.getDate() - 7);
   ladeKalender();
 }
 
-function naechsteWoche() {
+function vor() {
+  if (ansichtsModus === 'monat') return naechsterMonat();
   aktuellesDatum.setDate(aktuellesDatum.getDate() + 7);
   ladeKalender();
 }
 
-function heutigeWoche() {
+function heuteAnzeigen() {
   aktuellesDatum = new Date();
+  gewaehlterTag = null;
   ladeKalender();
+}
+
+/**
+ * Verschiebt um ganze Monate. setMonth() allein würde überlaufen — der 31. Januar
+ * plus ein Monat ergibt den 3. März. Deshalb vorher auf den Monatsletzten klemmen.
+ */
+function monatVerschieben(anzahl) {
+  const tag = aktuellesDatum.getDate();
+  const ziel = new Date(aktuellesDatum.getFullYear(), aktuellesDatum.getMonth() + anzahl, 1);
+  const letzterTag = new Date(ziel.getFullYear(), ziel.getMonth() + 1, 0).getDate();
+  ziel.setDate(Math.min(tag, letzterTag));
+  aktuellesDatum = ziel;
+  gewaehlterTag = null;
+  ladeKalender();
+}
+
+function vorherigerMonat() { monatVerschieben(-1); }
+function naechsterMonat() { monatVerschieben(1); }
+
+function springeZuDatum(wert) {
+  if (!wert) return;
+  const [y, m, d] = wert.split('-').map(Number);
+  aktuellesDatum = new Date(y, m - 1, d);
+  gewaehlterTag = null;
+  ladeKalender();
+}
+
+function setzeAnsicht(modus) {
+  ansichtsModus = modus;
+  localStorage.setItem('ecb_ansicht', modus);
+  ladeKalender();
+}
+
+/** Hält Ansichts-Buttons und Datumsfeld am aktuellen Zustand. */
+function aktualisiereNavigation() {
+  const istMonat = ansichtsModus === 'monat';
+  document.getElementById('btnWoche').classList.toggle('active', !istMonat);
+  document.getElementById('btnMonat').classList.toggle('active', istMonat);
+  document.getElementById('datumSprung').value = toLocalDate(aktuellesDatum);
+
+  // Im Monatsmodus bewegen die Hauptpfeile schon ganze Monate — die
+  // zusätzlichen Monatsknöpfe wären dann doppelt.
+  const anzeige = istMonat ? 'none' : '';
+  document.getElementById('btnMonatZurueck').style.display = anzeige;
+  document.getElementById('btnMonatVor').style.display = anzeige;
 }
 
 // ============ LOAD CALENDAR ============
 
-async function ladeKalender() {
+function ladeKalender() {
+  aktualisiereNavigation();
+  return ansichtsModus === 'monat' ? ladeMonat() : ladeWoche();
+}
+
+async function ladeWoche() {
   const montag = getMondayOfWeek(aktuellesDatum);
   const sonntag = new Date(montag);
   sonntag.setDate(sonntag.getDate() + 6);
@@ -85,6 +159,36 @@ async function ladeKalender() {
     const result = await API.getEvents(montag.toISOString(), ende.toISOString());
     termineImBlick = result.termine;
     zeigeKalender(result);
+  } catch (error) {
+    zeigeFehler(error.message || error);
+  }
+}
+
+/**
+ * Lädt das Monatsraster. Es zeigt immer sechs Wochen ab dem Montag der Woche,
+ * die den Monatsersten enthält — so bleibt die Höhe über alle Monate gleich und
+ * das Raster springt beim Blättern nicht.
+ */
+async function ladeMonat() {
+  const ersterDesMonats = new Date(aktuellesDatum.getFullYear(), aktuellesDatum.getMonth(), 1);
+  const rasterStart = getMondayOfWeek(ersterDesMonats);
+  const rasterEnde = new Date(rasterStart);
+  rasterEnde.setDate(rasterEnde.getDate() + 42);
+
+  document.getElementById('weekInfo').textContent =
+    aktuellesDatum.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  document.getElementById('kalenderContent').innerHTML =
+    '<div class="loading">⏳ Lade Termine...</div>';
+
+  try {
+    const result = await API.getEvents(rasterStart.toISOString(), rasterEnde.toISOString());
+    termineImBlick = result.termine;
+    startStunde = result.startStunde;
+    endStunde = result.endStunde;
+
+    document.getElementById('kalenderName').textContent = '📅 ' + result.kalenderName;
+    zeigeMonat(result, rasterStart, ersterDesMonats.getMonth());
+    erstelleLegende(result.termine);
   } catch (error) {
     zeigeFehler(error.message || error);
   }
@@ -306,6 +410,137 @@ function zeigeKalender(result) {
 
   // Build legend
   erstelleLegende(result.termine);
+}
+
+// ============ RENDER MONTH ============
+
+/**
+ * Monatsraster (sechs Wochen) neben einem Tagespanel für den gewählten Tag.
+ * Das Raster gibt den Überblick, das Panel die Uhrzeiten — in den schmalen
+ * Tageszellen wäre ein Stundenraster nicht lesbar.
+ */
+function zeigeMonat(result, rasterStart, monat) {
+  const heute = new Date();
+  const tagZumAnzeigen = gewaehlterTag ? new Date(gewaehlterTag) : heute;
+  const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+  let html = '<div class="month-layout"><div class="month-side"><div class="month-grid">';
+  html += tage.map(t => `<div class="month-weekday">${t}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const tag = new Date(rasterStart);
+    tag.setDate(tag.getDate() + i);
+
+    const fremderMonat = tag.getMonth() !== monat;
+    const istHeute = istGleicherTag(tag, heute);
+    const istGewaehlt = istGleicherTag(tag, tagZumAnzeigen);
+
+    const tagesTermine = result.termine
+      .filter(t => istGleicherTag(new Date(t.start), tag))
+      .sort((a, b) => a.start - b.start);
+
+    const klassen = ['month-cell'];
+    if (fremderMonat) klassen.push('other-month');
+    if (istHeute) klassen.push('today');
+    if (istGewaehlt) klassen.push('selected');
+
+    // Nur das ISO-Datum landet im Handler — keine benutzergesteuerten Strings.
+    html += `<div class="${klassen.join(' ')}" onclick="waehleTag('${toLocalDate(tag)}')">
+      <div class="month-daynum">${tag.getDate()}</div>
+      <div class="month-chips">`;
+
+    const sichtbar = tagesTermine.slice(0, 3);
+    for (const termin of sichtbar) {
+      const zeit = termin.ganztaegig ? '' : formatZeit(new Date(termin.start)) + ' ';
+      html += `<div class="month-chip"
+                    style="background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};"
+                    title="${escapeHtml(termin.titel)}">${escapeHtml(zeit)}${escapeHtml(termin.titel)}</div>`;
+    }
+    if (tagesTermine.length > sichtbar.length) {
+      html += `<div class="month-more">+${tagesTermine.length - sichtbar.length} weitere</div>`;
+    }
+
+    html += '</div></div>';
+  }
+
+  html += '</div></div>';
+  html += tagesPanelHtml(result.termine, tagZumAnzeigen, istGleicherTag(tagZumAnzeigen, heute));
+  html += '</div>';
+
+  document.getElementById('kalenderContent').innerHTML = html;
+
+  // Auf die aktuelle Uhrzeit scrollen, aber eine Stunde Kontext darüber lassen.
+  if (istGleicherTag(tagZumAnzeigen, heute)) {
+    const panel = document.getElementById('tagesPanelScroll');
+    if (panel) {
+      const stunde = Math.max(heute.getHours() - 1, startStunde);
+      panel.scrollTop = (stunde - startStunde) * 60;
+    }
+  }
+}
+
+/** Stundenraster eines einzelnen Tages, inklusive Überlappungs-Layout. */
+function tagesPanelHtml(termine, tag, istHeute) {
+  const tagesTermine = termine.filter(t => istGleicherTag(new Date(t.start), tag));
+  const ganztaegig = tagesTermine.filter(t => t.ganztaegig);
+  const spaltenLayout = berechneUeberlappungsLayout(tagesTermine);
+
+  const titel = tag.toLocaleDateString('de-DE', {
+    weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+
+  let html = `<div class="day-panel">
+    <div class="day-panel-header${istHeute ? ' today' : ''}">${escapeHtml(titel)}</div>`;
+
+  if (ganztaegig.length) {
+    html += '<div class="day-panel-allday">';
+    for (const termin of ganztaegig) {
+      html += `<div class="month-chip" style="background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};">
+        ${escapeHtml(termin.titel)} (ganztägig)</div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="day-panel-scroll" id="tagesPanelScroll"><div class="day-panel-grid">';
+
+  for (let stunde = startStunde; stunde <= endStunde; stunde++) {
+    html += `<div class="time-slot">${stunde}:00</div><div class="hour-cell">`;
+
+    for (const termin of tagesTermine) {
+      if (termin.ganztaegig) continue;
+      const tStart = new Date(termin.start);
+      if (tStart.getHours() !== stunde) continue;
+
+      const tEnde = new Date(termin.ende);
+      const topOffset = (tStart.getMinutes() / 60) * 60;
+      const dauer = (tEnde.getHours() * 60 + tEnde.getMinutes()) - (tStart.getHours() * 60 + tStart.getMinutes());
+      const spalte = spaltenLayout.get(termin.id);
+      const spaltenStil = spalte && spalte.cols > 1
+        ? ` left: calc(${spalte.col} / ${spalte.cols} * 100% + 2px); width: calc(100% / ${spalte.cols} - 4px); right: auto;`
+        : '';
+      const seriesBadge = termin.series_id ? ' 🔁' : '';
+
+      html += `<div class="event"
+                    style="top: ${topOffset}px; height: ${Math.max((dauer / 60) * 60, 20)}px; background: ${escapeHtml(termin.farbBg)}; border-left-color: ${escapeHtml(termin.farbHex)};${spaltenStil}"
+                    title="${escapeHtml(termin.beschreibung || termin.titel)}">
+        ${loeschButton(termin)}
+        <div class="event-title">${escapeHtml(termin.titel)}${seriesBadge}</div>
+        <div class="event-time">${formatZeit(tStart)} - ${formatZeit(tEnde)}</div>
+      </div>`;
+    }
+
+    html += '</div>';
+  }
+
+  html += '</div></div></div>';
+  return html;
+}
+
+/** Klick auf eine Tageszelle: Tagespanel auf diesen Tag umstellen. */
+function waehleTag(isoDatum) {
+  const [y, m, d] = isoDatum.split('-').map(Number);
+  gewaehlterTag = new Date(y, m - 1, d);
+  ladeMonat();
 }
 
 // ============ LEGEND ============

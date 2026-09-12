@@ -9,14 +9,37 @@ Google-Apps-Script-Vorgängerversion übernommen, damit das Frontend kompatibel 
 Alle anderen Endpunkte (`users`, `categories` außer Response-Shape, `auth`) nutzen
 die englischen DB-Spaltennamen direkt.
 
+## Rollen und Kategorie-Kennzeichen
+
+| Rolle | Rechte |
+|---|---|
+| `admin` | alles, inklusive Benutzer- und Kategorienverwaltung |
+| `editor` | Termine und Serien aller Kategorien anlegen, bearbeiten, löschen |
+| `eismeister` | dasselbe, aber **nur** in Kategorien mit `eismeister_managed = 1` |
+
+Zwei Kennzeichen an der Kategorie steuern das (siehe [DATABASE.md](DATABASE.md)):
+`login_required` blendet Termine für nicht angemeldete Abrufer aus,
+`eismeister_managed` gibt die Kategorie für die Eismeister-Rolle frei. Beide sind
+unabhängig voneinander schaltbar.
+
+Verstößt eine Anfrage gegen die Kategorie-Beschränkung, antwortet die API mit
+`403 { error: 'Für diese Kategorie fehlt die Berechtigung' }`. Bei `PUT` werden
+alte **und** neue Kategorie geprüft — sonst könnte ein Eismeister Termine in
+seine Kategorie hinein oder aus ihr heraus verschieben.
+
 ## Public (kein Auth)
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/api/events?start=ISO&end=ISO[&include_extern=1]` | Termine im Zeitraum (überlappend). Standardmäßig **nur Termine, die die Halle belegen** (`in_hall = 1`) — Auswärtsspiele finden woanders statt. `include_extern=1` liefert auch sie; die Admin-Terminliste nutzt das, die Kalenderansicht nicht. Response: `{ erfolg, kalenderName, termine[], startStunde, endStunde }` |
-| GET | `/api/events/:id` | Einzelner Termin |
-| GET | `/api/categories` | Alle Kategorien, sortiert nach `sort_order` |
+| GET | `/api/events/:id` | Einzelner Termin. Ein Termin aus einer Kategorie mit `login_required = 1` liefert ohne Anmeldung `404` |
+| GET | `/api/categories` | Alle Kategorien, sortiert nach `sort_order`; ohne Anmeldung ohne die mit `login_required = 1` |
 | GET | `/api/config` | `{ calendarName, startHour, endHour }` |
+
+Diese drei Endpunkte laufen über `optionalAuth` (`server/middleware/auth.js`):
+kommt ein gültiges Token mit, wird es ausgewertet, andernfalls antworten sie wie
+für einen anonymen Abrufer — **nie** mit 401. Ein ungültiges oder abgelaufenes
+Token wird wie „nicht angemeldet" behandelt.
 
 ## Authenticated (JWT, `requireAuth`)
 
@@ -86,6 +109,13 @@ die Anzeige — ohne den wirkt die Auswertung fehlerhaft.
 Ohne `/api`-Präfix, weil die URL in Kalender-Apps von Hand eingetragen wird.
 Öffentlich wie die Kalenderansicht: Wer den Kalender sehen darf, darf ihn auch
 abonnieren.
+
+**Anmeldepflichtige Kategorien bleiben draußen.** `loadEvents()` in
+`server/routes/feeds.js` filtert `login_required = 1` grundsätzlich weg — für
+alle Feeds an einer Stelle. Feeds werden von Kalender-Apps ohne Anmeldung
+abgerufen; wer die URL kennt, käme sonst an interne Termine. Wer solche Termine
+abonnierbar machen will, braucht einen eigenen, tokengeschützten Feed — den gibt
+es bewusst noch nicht.
 
 **Team-Feed gegen Hallen-Feed.** Der Hallen-Feed zeigt die Belegung und lässt
 Auswärtsspiele weg. Der Team-Feed zeigt die Termine einer Mannschaft und nimmt

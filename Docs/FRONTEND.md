@@ -59,6 +59,25 @@ inline, daher `style-src 'unsafe-inline'` in der CSP, siehe [ARCHITECTURE.md](AR
 Nutzt die deutschen Feldnamen aus der `/api/events`-Response direkt (`termin.titel`,
 `termin.start`, …) ohne Umbenennung.
 
+### Wochen- und Monatsansicht
+
+`ansichtsModus` (`'woche'` | `'monat'`, in `localStorage` gemerkt) steuert, ob
+`ladeKalender()` an `ladeWoche()` oder `ladeMonat()` weiterreicht. Die Pfeile
+(`zurueck()`/`vor()`) bewegen sich in der Einheit der aktiven Ansicht.
+
+Die Monatsansicht (`zeigeMonat`) rendert ein eigenes `.month-grid` mit fest 42
+Zellen — nicht `.calendar-grid`, dessen stundenbasierte Absolutpositionierung
+passt dort nicht. Das Tagespanel daneben (`tagesPanelHtml`) ist wieder ein
+Stundenraster und nutzt deshalb `berechneUeberlappungsLayout()` und
+`loeschButton()` gemeinsam mit der Wochenansicht.
+
+Beim Rechnen mit Datumsangaben `toLocalDate()` verwenden, nicht `toISOString()` —
+letzteres rechnet nach UTC um und liefert abends den Vortag. `monatVerschieben()`
+klemmt zusätzlich auf den Monatsletzten, sonst überläuft `setMonth()` (31. Januar
+plus ein Monat ergäbe den 3. März).
+
+### Login-Status
+
 Die Ansicht ist öffentlich, kennt aber den Login-Status: Beim Start prüft
 `API.me()` den Token (nicht nur sein Vorhandensein — ein abgelaufener Token
 würde sonst Buttons zeigen, die nur 401 liefern) und setzt `darfBearbeiten`.

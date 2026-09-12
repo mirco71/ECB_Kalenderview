@@ -27,12 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Hide admin-only elements for editors
-  if (currentUser.role !== 'admin') {
-    document.querySelectorAll('.admin-only').forEach(el => {
-      el.style.display = 'none';
-    });
-  }
+  rollenSichtbarkeitAnwenden();
 
   // Set default filter dates: current week
   const now = new Date();
@@ -53,6 +48,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initStats();
 });
+
+/**
+ * Blendet Bereiche aus, für die die Rolle keine Berechtigung hat.
+ * Muss nach jedem innerHTML-Rendern erneut laufen, weil dabei neue
+ * .admin-only-Elemente in den DOM kommen.
+ */
+function rollenSichtbarkeitAnwenden() {
+  if (!currentUser) return;
+
+  const verstecken = (selektor) =>
+    document.querySelectorAll(selektor).forEach(el => { el.style.display = 'none'; });
+
+  if (currentUser.role !== 'admin') verstecken('.admin-only');
+  // Ein Eismeister arbeitet ausschließlich im Termine-Tab.
+  if (currentUser.role === 'eismeister') verstecken('.not-eismeister');
+}
+
+const ROLLEN_ANZEIGE = {
+  admin: '👑 Admin',
+  editor: '✏️ Editor',
+  eismeister: '🧊 Eismeister',
+};
+
+/** Kategorien, in denen der angemeldete Benutzer Termine bearbeiten darf. */
+function bearbeitbareKategorien() {
+  if (currentUser && currentUser.role === 'eismeister') {
+    return categories.filter(c => c.eismeister_managed);
+  }
+  return categories;
+}
+
+/** Spiegelt die Server-Prüfung, um Aktionen auszublenden, die 403 liefern würden. */
+function darfKategorieBearbeiten(categoryId) {
+  if (!currentUser || currentUser.role !== 'eismeister') return true;
+  const kategorie = categories.find(c => String(c.id) === String(categoryId));
+  return !!kategorie && !!kategorie.eismeister_managed;
+}
 
 function initSeriesForm() {
   const today = new Date();
@@ -210,6 +242,13 @@ async function loadEvents() {
 // all user-controlled strings are looked up from `events` inside the handler,
 // never injected into HTML attributes.
 function renderEventRow(t) {
+  // Termine fremder Kategorien bleiben sichtbar, aber ohne Aktionen — der Server
+  // würde sie mit 403 ablehnen.
+  const aktionen = darfKategorieBearbeiten(t.farbe)
+    ? `<button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
+       <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>`
+    : '';
+
   return `
     <tr>
       <td>${escapeHtml(t.titel)}</td>
@@ -217,10 +256,7 @@ function renderEventRow(t) {
       <td>${formatDatetime(new Date(t.start).toISOString())}</td>
       <td>${formatDatetime(new Date(t.ende).toISOString())}</td>
       <td>${t.ganztaegig ? '✅' : ''}</td>
-      <td class="actions">
-        <button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
-        <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>
-      </td>
+      <td class="actions">${aktionen}</td>
     </tr>
   `;
 }
@@ -232,15 +268,16 @@ function renderSeriesRow(t) {
     : 'Serie';
   const period = s ? `${formatDatum(s.datumVon)} – ${formatDatum(s.datumBis)}` : '';
   const count = s ? `${s.anzahl} Termine` : '';
+  const darf = darfKategorieBearbeiten(t.farbe);
 
   return `
-    <tr class="series-row" onclick="openSeriesModal('${escapeHtml(t.series_id)}')">
+    <tr class="${darf ? 'series-row' : ''}" ${darf ? `onclick="openSeriesModal('${escapeHtml(t.series_id)}')"` : ''}>
       <td>🔁 ${escapeHtml(t.titel)}<span class="series-badge">${escapeHtml(count)}</span></td>
       <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
       <td colspan="2">${escapeHtml(rhythm)} · ${escapeHtml(period)}</td>
       <td></td>
       <td class="actions">
-        <button class="btn-icon" title="Serie öffnen" onclick="event.stopPropagation();openSeriesModal('${escapeHtml(t.series_id)}')">📂</button>
+        ${darf ? `<button class="btn-icon" title="Serie öffnen" onclick="event.stopPropagation();openSeriesModal('${escapeHtml(t.series_id)}')">📂</button>` : ''}
       </td>
     </tr>
   `;
@@ -471,7 +508,7 @@ function renderSeriesModal() {
   document.getElementById('seriesEditTimeTo').value = serie.zeitBis;
 
   const catSelect = document.getElementById('seriesEditCategory');
-  catSelect.innerHTML = categories.map(c =>
+  catSelect.innerHTML = bearbeitbareKategorien().map(c =>
     `<option value="${c.id}">${escapeHtml(c.name)}</option>`
   ).join('');
   catSelect.value = serie.category_id;
@@ -631,9 +668,9 @@ async function loadCategories() {
   try {
     categories = await API.getCategories();
 
-    // Populate event form dropdown
+    // Populate event form dropdown — ein Eismeister sieht nur seine Kategorien
     const select = document.getElementById('eventCategory');
-    select.innerHTML = categories.map(c =>
+    select.innerHTML = bearbeitbareKategorien().map(c =>
       `<option value="${c.id}">${escapeHtml(c.name)}</option>`
     ).join('');
 
@@ -645,6 +682,7 @@ async function loadCategories() {
         <td>${escapeHtml(c.name)}</td>
         <td>${c.sort_order}</td>
         <td>${c.group_by_title ? 'nach Titel' : 'gesamt'}</td>
+        <td>${c.login_required ? '🔒 nur angemeldet' : 'öffentlich'}${c.eismeister_managed ? ' · Eismeister' : ''}</td>
         <td class="actions admin-only">
           <button class="btn-icon" title="Bearbeiten" onclick="editCategory(${c.id})">✏️</button>
           <button class="btn-icon" title="Löschen" onclick="deleteCategory(${c.id})">🗑️</button>
@@ -652,12 +690,7 @@ async function loadCategories() {
       </tr>
     `).join('');
 
-    // Hide admin-only if editor
-    if (currentUser && currentUser.role !== 'admin') {
-      document.querySelectorAll('.admin-only').forEach(el => {
-        el.style.display = 'none';
-      });
-    }
+    rollenSichtbarkeitAnwenden();
   } catch (err) {
     showToast('Kategorien laden fehlgeschlagen: ' + err.message, 'error');
   }
@@ -674,6 +707,8 @@ document.getElementById('categoryForm').addEventListener('submit', async (e) => 
     color_bg: hexToRgba(colorHex, 0.3),
     sort_order: parseInt(document.getElementById('categorySortOrder').value) || 0,
     group_by_title: document.getElementById('categoryGroupByTitle').checked,
+    login_required: document.getElementById('categoryLoginRequired').checked,
+    eismeister_managed: document.getElementById('categoryEismeisterManaged').checked,
   };
 
   try {
@@ -700,6 +735,8 @@ function editCategory(id) {
   document.getElementById('categoryColor').value = cat.color_hex;
   document.getElementById('categorySortOrder').value = cat.sort_order;
   document.getElementById('categoryGroupByTitle').checked = !!cat.group_by_title;
+  document.getElementById('categoryLoginRequired').checked = !!cat.login_required;
+  document.getElementById('categoryEismeisterManaged').checked = !!cat.eismeister_managed;
 
   document.getElementById('categoryFormTitle').textContent = 'Kategorie bearbeiten';
   document.getElementById('categorySubmitBtn').textContent = 'Kategorie aktualisieren';
@@ -727,6 +764,8 @@ function resetCategoryForm() {
   document.getElementById('categoryId').value = '';
   document.getElementById('categoryColor').value = '#1a73e8';
   document.getElementById('categoryGroupByTitle').checked = false;
+  document.getElementById('categoryLoginRequired').checked = false;
+  document.getElementById('categoryEismeisterManaged').checked = false;
   document.getElementById('categoryFormTitle').textContent = 'Neue Kategorie erstellen';
   document.getElementById('categorySubmitBtn').textContent = 'Kategorie erstellen';
   document.getElementById('categoryCancelBtn').style.display = 'none';
@@ -750,7 +789,7 @@ async function loadUsers() {
         <td>${u.id}</td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name)}</td>
-        <td>${u.role === 'admin' ? '👑 Admin' : '✏️ Editor'}</td>
+        <td>${ROLLEN_ANZEIGE[u.role] || escapeHtml(u.role)}</td>
         <td class="actions">
           <button class="btn-icon" title="Bearbeiten" onclick="editUser(${u.id})">✏️</button>
           ${u.id !== currentUser.id ? `<button class="btn-icon" title="Löschen" onclick="deleteUser(${u.id})">🗑️</button>` : ''}

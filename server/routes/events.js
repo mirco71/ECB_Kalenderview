@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { body, query, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const config = require('../config');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 const {
   toLocalDateString,
   toLocalTimeString,
@@ -30,6 +30,32 @@ const EVENT_SELECT = `${EVENT_BASE} WHERE e.id = ?`;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * SQL-Zusatzbedingung, die Termine anmeldepflichtiger Kategorien für nicht
+ * angemeldete Abrufer ausblendet (Eismeister-Dienstzeiten sind intern).
+ */
+function sichtbarkeitsFilter(user) {
+  return user ? '' : ' AND c.login_required = 0';
+}
+
+/**
+ * Darf der Benutzer Termine dieser Kategorie anlegen, bearbeiten und löschen?
+ *
+ * Die Einschränkung klammert ausschließlich die Rolle 'eismeister': sie ist auf
+ * die als eismeister_managed gekennzeichneten Kategorien begrenzt. Admins und
+ * Editoren bleiben unbeschränkt und dürfen damit auch Eismeister-Termine ändern.
+ */
+function darfKategorieBearbeiten(db, user, categoryId) {
+  if (!user || user.role !== 'eismeister') return true;
+
+  const kategorie = db
+    .prepare('SELECT eismeister_managed FROM categories WHERE id = ?')
+    .get(parseInt(categoryId));
+  return !!kategorie && kategorie.eismeister_managed === 1;
+}
+
+const KATEGORIE_VERBOTEN = 'Für diese Kategorie fehlt die Berechtigung';
+
 // GET /api/events?start=ISO&end=ISO[&include_extern=1]
 //
 // Standardmäßig nur Termine, die die Halle belegen (in_hall = 1) — das ist die
@@ -38,6 +64,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // Auswärtsspiele nicht anzeigen.
 router.get(
   '/',
+  optionalAuth,
   [
     query('start').isISO8601().withMessage('Ungültiges Startdatum'),
     query('end').isISO8601().withMessage('Ungültiges Enddatum'),
@@ -57,6 +84,7 @@ router.get(
     const events = db
       .prepare(
         `${EVENT_BASE} WHERE e.start_time < ? AND e.end_time > ?${hallFilter}` +
+        sichtbarkeitsFilter(req.user) +
         ' ORDER BY e.start_time ASC'
       )
       .all(end, start);
@@ -72,14 +100,16 @@ router.get(
 );
 
 // GET /api/events/:id
-router.get('/:id', param('id').isInt(), (req, res) => {
+router.get('/:id', optionalAuth, param('id').isInt(), (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ error: 'Ungültige Event-ID' });
   }
 
   const db = getDb();
-  const event = db.prepare(EVENT_SELECT).get(parseInt(req.params.id));
+  const event = db
+    .prepare(`${EVENT_BASE} WHERE e.id = ?${sichtbarkeitsFilter(req.user)}`)
+    .get(parseInt(req.params.id));
 
   if (!event) {
     return res.status(404).json({ error: 'Termin nicht gefunden' });
@@ -119,6 +149,10 @@ router.post(
     const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(parseInt(category_id));
     if (!category) {
       return res.status(400).json({ error: 'Kategorie nicht gefunden' });
+    }
+
+    if (!darfKategorieBearbeiten(db, req.user, category_id)) {
+      return res.status(403).json({ error: KATEGORIE_VERBOTEN });
     }
 
     const result = db
@@ -191,6 +225,13 @@ router.put(
       }
     }
 
+    // Beide Kategorien prüfen: sonst könnte ein Eismeister einen fremden Termin
+    // in seine Kategorie ziehen oder einen eigenen aus ihr heraus verschieben.
+    if (!darfKategorieBearbeiten(db, req.user, existing.category_id) ||
+        !darfKategorieBearbeiten(db, req.user, updates.category_id)) {
+      return res.status(403).json({ error: KATEGORIE_VERBOTEN });
+    }
+
     db.prepare(
       `UPDATE events SET title = ?, start_time = ?, end_time = ?, category_id = ?,
        all_day = ?, description = ?, location = ?, updated_at = datetime('now')
@@ -219,9 +260,13 @@ router.delete('/:id', requireAuth, param('id').isInt(), (req, res) => {
   }
 
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM events WHERE id = ?').get(parseInt(req.params.id));
+  const existing = db.prepare('SELECT id, category_id FROM events WHERE id = ?').get(parseInt(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: 'Termin nicht gefunden' });
+  }
+
+  if (!darfKategorieBearbeiten(db, req.user, existing.category_id)) {
+    return res.status(403).json({ error: KATEGORIE_VERBOTEN });
   }
 
   db.prepare('DELETE FROM events WHERE id = ?').run(parseInt(req.params.id));
@@ -267,6 +312,10 @@ router.post(
     const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(parseInt(category_id));
     if (!category) {
       return res.status(400).json({ error: 'Kategorie nicht gefunden' });
+    }
+
+    if (!darfKategorieBearbeiten(db, req.user, category_id)) {
+      return res.status(403).json({ error: KATEGORIE_VERBOTEN });
     }
 
     const occurrences = generateSeriesDates(parseInt(weekday), date_from, date_to, time_from, time_to);
@@ -376,6 +425,12 @@ router.put(
       }
     }
 
+    // Wie beim Einzeltermin beide Kategorien prüfen — alte und neue.
+    if (!darfKategorieBearbeiten(db, req.user, existing.category_id) ||
+        !darfKategorieBearbeiten(db, req.user, updates.category_id)) {
+      return res.status(403).json({ error: KATEGORIE_VERBOTEN });
+    }
+
     const timeChanged = (req.body.time_from != null && req.body.time_from !== existing.time_from) ||
                         (req.body.time_to != null && req.body.time_to !== existing.time_to);
 
@@ -453,9 +508,13 @@ router.delete('/series/:seriesId', requireAuth, (req, res) => {
   const seriesId = req.params.seriesId;
 
   const count = db.prepare('SELECT COUNT(*) as count FROM events WHERE series_id = ?').get(seriesId);
-  const series = db.prepare('SELECT id FROM series WHERE id = ?').get(seriesId);
+  const series = db.prepare('SELECT id, category_id FROM series WHERE id = ?').get(seriesId);
   if ((!count || count.count === 0) && !series) {
     return res.status(404).json({ error: 'Terminserie nicht gefunden' });
+  }
+
+  if (series && !darfKategorieBearbeiten(db, req.user, series.category_id)) {
+    return res.status(403).json({ error: KATEGORIE_VERBOTEN });
   }
 
   db.prepare('DELETE FROM events WHERE series_id = ?').run(seriesId);

@@ -308,14 +308,187 @@ body {
   opacity: 1;
 }
 
+/* ============ NAVIGATION: ANSICHT UND DATUMSSPRUNG ============ */
+
+.view-switch {
+  display: flex;
+  gap: 2px;
+}
+
+.view-btn.active {
+  background: white;
+  color: #1a73e8;
+  font-weight: 500;
+}
+
+.nav-date {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Das Kalendersymbol im Datumsfeld ist dunkel und auf dem blauen Kopf fast
+   unsichtbar — hier aufhellen. */
+.nav-date::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+/* ============ MONATSANSICHT ============ */
+
+.month-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  padding: 20px;
+  align-items: start;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: #e0e0e0;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.month-weekday {
+  background: #f8f9fa;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f6368;
+}
+
+.month-cell {
+  background: white;
+  min-height: 96px;
+  padding: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  overflow: hidden;
+}
+
+.month-cell:hover { background: #f5f9ff; }
+
+.month-cell.other-month { background: #fafafa; }
+.month-cell.other-month .month-daynum { color: #bbb; }
+
+.month-cell.today { background: #e8f0fe; }
+
+.month-cell.today .month-daynum {
+  background: #1a73e8;
+  color: white;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.month-cell.selected {
+  box-shadow: inset 0 0 0 2px #1a73e8;
+}
+
+.month-daynum {
+  font-size: 12px;
+  font-weight: 600;
+  color: #202124;
+  margin-bottom: 2px;
+}
+
+.month-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.month-chip {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-left: 3px solid;
+  border-radius: 2px;
+  color: #202124;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.month-more {
+  font-size: 10px;
+  color: #5f6368;
+  padding-left: 4px;
+}
+
+/* ============ TAGESPANEL ============ */
+
+.day-panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.day-panel-header {
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #202124;
+}
+
+.day-panel-header.today {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.day-panel-allday {
+  padding: 6px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Eigener Scroll-Container: bei vielen Terminen scrollt nur der Tag, nicht die
+   ganze Seite. Beim Öffnen springt er auf die aktuelle Uhrzeit (calendar.js). */
+.day-panel-scroll {
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.day-panel-grid {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+}
+
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
     gap: 15px;
   }
-  
+
   .nav-controls {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
   }
+
+  /* Tagespanel unter das Monatsraster, sonst wird beides unlesbar schmal */
+  .month-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px;
+  }
+
+  .month-cell { min-height: 64px; }
 }

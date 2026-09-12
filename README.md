@@ -75,8 +75,14 @@ npm run dev
 
 | Role | Permissions |
 |------|-------------|
-| **Editor** | Create, edit, and delete events |
+| **Editor** | Create, edit, and delete events in every category |
+| **Eismeister** | Same, but only in categories flagged `eismeister_managed` (the *Eismeister* category). Sees only the events tab |
 | **Admin** | Everything editor can do + manage users + manage categories |
+
+Categories carry two independent flags: `login_required` hides their events from
+anyone who is not logged in — including all iCalendar feeds — and
+`eismeister_managed` opens the category to the Eismeister role. The seeded
+*Eismeister* category has both set.
 
 ## API Endpoints
 
@@ -122,6 +128,19 @@ Kalender löschen — der Lösch-Button erscheint beim Überfahren des Termins.
 **Zeitzone**: Serien werden in lokaler Zeit berechnet, deshalb setzen
 `Dockerfile` und `docker-compose.yml` `TZ=Europe/Berlin`. Ohne feste Zeitzone
 läuft der Container in UTC und die Uhrzeiten verschieben sich.
+
+### Kalenderansicht: Woche und Monat
+
+Umschalter **Woche / Monat** in der Kopfleiste; die Wahl bleibt über einen Reload
+erhalten. Die Pfeile springen in der Einheit der jeweiligen Ansicht (eine Woche
+bzw. einen Monat), ergänzt um ein Datumsfeld für den Direktsprung und — in der
+Wochenansicht — Knöpfe für ±1 Monat.
+
+Die Monatsansicht zeigt immer sechs Wochen (stabile Höhe beim Blättern) mit bis
+zu drei Terminen je Tag, darüber hinaus „+N weitere". Daneben steht ein
+Tagespanel mit Stundenraster für den gewählten Tag — es startet auf heute,
+folgt einem Klick auf eine Tageszelle und scrollt beim Öffnen auf die aktuelle
+Uhrzeit. Auf schmalen Bildschirmen rutscht es unter das Monatsraster.
 
 ### Billing report
 

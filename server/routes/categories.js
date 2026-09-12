@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, optionalAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -10,11 +10,12 @@ const router = express.Router();
 // rendered into an inline style attribute on the public calendar.
 const COLOR_PATTERN = /^(#[0-9a-fA-F]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/;
 
-// GET /api/categories (public)
-router.get('/', (req, res) => {
+// GET /api/categories (public; anmeldepflichtige Kategorien nur für Angemeldete)
+router.get('/', optionalAuth, (req, res) => {
   const db = getDb();
+  const filter = req.user ? '' : ' WHERE login_required = 0';
   const categories = db
-    .prepare('SELECT * FROM categories ORDER BY sort_order ASC')
+    .prepare(`SELECT * FROM categories${filter} ORDER BY sort_order ASC`)
     .all();
   res.json(categories);
 });
@@ -30,6 +31,8 @@ router.post(
     body('color_bg').matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
     body('group_by_title').optional().isBoolean(),
+    body('login_required').optional().isBoolean(),
+    body('eismeister_managed').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -37,7 +40,8 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
-    const { name, color_hex, color_bg, sort_order, group_by_title } = req.body;
+    const { name, color_hex, color_bg, sort_order, group_by_title,
+            login_required, eismeister_managed } = req.body;
     const db = getDb();
 
     // Check for duplicate name
@@ -47,8 +51,14 @@ router.post(
     }
 
     const result = db
-      .prepare('INSERT INTO categories (name, color_hex, color_bg, sort_order, group_by_title) VALUES (?, ?, ?, ?, ?)')
-      .run(name, color_hex, color_bg, sort_order || 0, group_by_title ? 1 : 0);
+      .prepare(
+        'INSERT INTO categories (name, color_hex, color_bg, sort_order, group_by_title, login_required, eismeister_managed) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(
+        name, color_hex, color_bg, sort_order || 0, group_by_title ? 1 : 0,
+        login_required ? 1 : 0, eismeister_managed ? 1 : 0
+      );
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(category);
@@ -67,6 +77,8 @@ router.put(
     body('color_bg').optional().matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
     body('group_by_title').optional().isBoolean(),
+    body('login_required').optional().isBoolean(),
+    body('eismeister_managed').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -88,6 +100,12 @@ router.put(
       group_by_title: req.body.group_by_title !== undefined
         ? (req.body.group_by_title ? 1 : 0)
         : existing.group_by_title,
+      login_required: req.body.login_required !== undefined
+        ? (req.body.login_required ? 1 : 0)
+        : existing.login_required,
+      eismeister_managed: req.body.eismeister_managed !== undefined
+        ? (req.body.eismeister_managed ? 1 : 0)
+        : existing.eismeister_managed,
     };
 
     // Check for duplicate name (if name changed)
@@ -98,8 +116,14 @@ router.put(
       }
     }
 
-    db.prepare('UPDATE categories SET name = ?, color_hex = ?, color_bg = ?, sort_order = ?, group_by_title = ? WHERE id = ?')
-      .run(updates.name, updates.color_hex, updates.color_bg, updates.sort_order, updates.group_by_title, parseInt(req.params.id));
+    db.prepare(
+      'UPDATE categories SET name = ?, color_hex = ?, color_bg = ?, sort_order = ?, ' +
+      'group_by_title = ?, login_required = ?, eismeister_managed = ? WHERE id = ?'
+    ).run(
+      updates.name, updates.color_hex, updates.color_bg, updates.sort_order,
+      updates.group_by_title, updates.login_required, updates.eismeister_managed,
+      parseInt(req.params.id)
+    );
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(parseInt(req.params.id));
     res.json(category);

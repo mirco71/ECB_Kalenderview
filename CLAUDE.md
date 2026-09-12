@@ -44,6 +44,16 @@ npm run seed    # Ersten Admin-User anlegen (admin/admin123 per Default)
   komplett neu auf Disk geschrieben. Ein zweiter Prozess (z. B. `seed.js`), der
   parallel zum laufenden Server schreibt, wird vom nächsten Server-Save
   überschrieben — nach `seed.js` muss der Server/Container neu gestartet werden.
+- **Neue Rolle = Tabellen-Neuaufbau**: Die Rollenliste steht in der CHECK-Constraint
+  der `users`-Tabelle, und SQLite kann die nicht per `ALTER TABLE` ändern.
+  `migrateEismeisterRolle()` in `server/database.js` baut die Tabelle deshalb um.
+  Wer eine weitere Rolle ergänzt, muss drei Stellen anfassen (`CREATE TABLE users`,
+  die Rebuild-Migration, `ROLLEN` in `server/routes/users.js`) — und vor dem Deploy
+  ein Backup ziehen. Details in [Docs/DATABASE.md](Docs/DATABASE.md).
+- **Nicht-öffentliche Termine haben zwei Austrittspfade**: `/api/events` (inkl. `/:id`)
+  und die iCalendar-Feeds. Wer an der Sichtbarkeit arbeitet, muss `login_required`
+  in beiden filtern — `server/routes/feeds.js` hat keine Anmeldung und ist der
+  leichter zu übersehende Pfad.
 - **Zeitzone**: Serientermine werden in lokaler Zeit gerechnet (`server/datetime.js`),
   der Container ist auf `TZ=Europe/Berlin` festgenagelt. Wer Datums-/Zeitlogik
   anfasst: `toISOString()` liefert UTC und ist für „welcher Kalendertag ist das"

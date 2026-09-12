@@ -137,25 +137,42 @@ async function initDatabase() {
 
 // ============ SCHEMA MIGRATIONS ============
 
+// Die Kategorie der Eismeister-Dienstzeiten. Wird in frischen Datenbanken
+// geseedet und in gewachsenen per Migration nachgezogen.
+const EISMEISTER_KATEGORIE = {
+  name: 'Eismeister',
+  color_hex: '#5484ed',
+  color_bg: 'rgba(84, 132, 237, 0.3)',
+};
+
 function migrate() {
   // sql.js requires executing statements one at a time for CREATE TABLE
   db.exec(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('admin', 'editor')),
+    role TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('admin', 'editor', 'eismeister')),
     display_name TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
 
+  // login_required = 1: Termine dieser Kategorie sind nur für angemeldete
+  // Benutzer sichtbar — sie fehlen in der öffentlichen Kalenderansicht und in
+  // allen iCalendar-Feeds (die kennen keine Anmeldung).
+  // eismeister_managed = 1: die Rolle 'eismeister' darf Termine dieser Kategorie
+  // anlegen, bearbeiten und löschen. Beide Kennzeichen sind absichtlich getrennt
+  // schaltbar — eine interne Vermietung soll nicht automatisch in den
+  // Eismeister-Bereich fallen.
   db.exec(`CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     color_hex TEXT NOT NULL,
     color_bg TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    group_by_title INTEGER NOT NULL DEFAULT 0
+    group_by_title INTEGER NOT NULL DEFAULT 0,
+    login_required INTEGER NOT NULL DEFAULT 0,
+    eismeister_managed INTEGER NOT NULL DEFAULT 0
   )`);
 
   // external_uid/source: Termine, die aus Hallenplanung stammen. Der Abgleich
@@ -249,6 +266,93 @@ function migrate() {
     db.exec('ALTER TABLE categories ADD COLUMN group_by_title INTEGER NOT NULL DEFAULT 0');
     db.exec('UPDATE categories SET group_by_title = 1 WHERE id = 5');
   } catch(e) {}
+
+  // Migration: Kennzeichen für Sichtbarkeit und Eismeister-Zuständigkeit
+  // (siehe CREATE TABLE categories). Jedes ALTER in eigenem try/catch, damit das
+  // zweite auch dann läuft, wenn nur das erste schon existiert.
+  try { db.exec('ALTER TABLE categories ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE categories ADD COLUMN eismeister_managed INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+
+  migrateEismeisterRolle();
+  seedEismeisterKategorie();
+}
+
+/**
+ * Erweitert die CHECK-Constraint der users-Tabelle um die Rolle 'eismeister'.
+ *
+ * SQLite kann eine CHECK-Constraint nicht per ALTER TABLE ändern, und
+ * `CREATE TABLE IF NOT EXISTS` fasst eine bestehende Tabelle nicht an — in
+ * gewachsenen Datenbanken steckt deshalb noch `CHECK (role IN ('admin',
+ * 'editor'))`, und das Anlegen eines Eismeisters würde dort scheitern. Bleibt
+ * nur der Neuaufbau der Tabelle.
+ *
+ * Die Fremdschlüssel müssen dafür aus sein: events.created_by und
+ * series.created_by verweisen auf users(id), der DROP würde sonst abgelehnt.
+ */
+function migrateEismeisterRolle() {
+  try {
+    const vorhanden = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")
+      .get();
+    if (!vorhanden || !vorhanden.sql || vorhanden.sql.includes('eismeister')) return;
+
+    db.pragma('foreign_keys = OFF');
+    db.exec(`CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('admin', 'editor', 'eismeister')),
+      display_name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.exec(
+      'INSERT INTO users_new (id, username, password_hash, role, display_name, created_at, updated_at) ' +
+      'SELECT id, username, password_hash, role, display_name, created_at, updated_at FROM users'
+    );
+    db.exec('DROP TABLE users');
+    db.exec('ALTER TABLE users_new RENAME TO users');
+    db.pragma('foreign_keys = ON');
+
+    console.log('✅ users-Tabelle für Rolle "eismeister" neu aufgebaut');
+  } catch (err) {
+    // Scheitert der Umbau, bleibt die alte Tabelle bestehen — der Fehler darf
+    // nicht verschluckt werden, sonst schlägt später das Anlegen eines
+    // Eismeisters ohne erkennbaren Grund fehl.
+    console.error('Migration der users-Tabelle fehlgeschlagen:', err);
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+/**
+ * Legt die Kategorie "Eismeister" in bestehenden Datenbanken an.
+ * seedCategories() greift nur bei komplett leerer Tabelle, deshalb hier per
+ * Namensprüfung. Die ID kommt aus AUTOINCREMENT — eine feste ID wäre riskant,
+ * weil in gewachsenen Datenbanken schon eigene Kategorien liegen können.
+ */
+function seedEismeisterKategorie() {
+  try {
+    const anzahl = db.prepare('SELECT COUNT(*) as count FROM categories').get();
+    if (anzahl.count === 0) return; // frische DB — seedCategories() übernimmt
+
+    const vorhanden = db.prepare('SELECT id FROM categories WHERE name = ?').get(EISMEISTER_KATEGORIE.name);
+    if (vorhanden) return;
+
+    const maxSort = db.prepare('SELECT MAX(sort_order) as max FROM categories').get();
+    db.prepare(
+      'INSERT INTO categories (name, color_hex, color_bg, sort_order, group_by_title, login_required, eismeister_managed) ' +
+      'VALUES (?, ?, ?, ?, 0, 1, 1)'
+    ).run(
+      EISMEISTER_KATEGORIE.name,
+      EISMEISTER_KATEGORIE.color_hex,
+      EISMEISTER_KATEGORIE.color_bg,
+      (maxSort.max || 0) + 1
+    );
+
+    console.log('✅ Kategorie "Eismeister" angelegt');
+  } catch (err) {
+    console.error('Anlegen der Kategorie "Eismeister" fehlgeschlagen:', err);
+  }
 }
 
 // ============ BACKFILL SERIES ============
@@ -314,23 +418,26 @@ function seedCategories() {
   const count = db.prepare('SELECT COUNT(*) as count FROM categories').get();
   if (count.count > 0) return;
 
-  // group_by_title: wird in der Abrechnung zusätzlich nach Termin-Titel
-  // aufgeschlüsselt. Nur Hobbies, wie im alten Abrechnungs-Tool.
+  // Spalten nach sort_order: group_by_title, login_required, eismeister_managed.
+  // group_by_title wird in der Abrechnung zusätzlich nach Termin-Titel
+  // aufgeschlüsselt — nur Hobbies, wie im alten Abrechnungs-Tool.
   const categories = [
-    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 1, 0],
-    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 2, 1],
-    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 3, 0],
-    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 4, 0],
-    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 5, 0],
+    [2, 'STB', '#7ae7bf', 'rgba(122, 231, 191, 0.3)', 1, 0, 0, 0],
+    [5, 'Hobbies', '#fbd75b', 'rgba(251, 215, 91, 0.3)', 2, 1, 0, 0],
+    [7, 'ECB', '#46d6db', 'rgba(70, 214, 219, 0.3)', 3, 0, 0, 0],
+    [8, 'Vermietung', '#e1e1e1', 'rgba(225, 225, 225, 0.5)', 4, 0, 0, 0],
+    [11, 'öffentliche Laufzeit', '#dc2127', 'rgba(220, 33, 39, 0.3)', 5, 0, 0, 0],
+    [12, EISMEISTER_KATEGORIE.name, EISMEISTER_KATEGORIE.color_hex, EISMEISTER_KATEGORIE.color_bg, 6, 0, 1, 1],
   ];
 
   for (const cat of categories) {
     db.prepare(
-      'INSERT INTO categories (id, name, color_hex, color_bg, sort_order, group_by_title) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO categories (id, name, color_hex, color_bg, sort_order, group_by_title, login_required, eismeister_managed) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(...cat);
   }
 
-  console.log('✅ Seeded 5 categories');
+  console.log('✅ Seeded 6 categories');
 }
 
 // ============ EXPORTS ============

@@ -179,13 +179,17 @@ function buildCalendar(name, rows, summaryFor) {
 function loadEvents() {
   const von = new Date();
   von.setDate(von.getDate() - PAST_DAYS);
+  // Termine anmeldepflichtiger Kategorien (Eismeister-Dienstzeiten) bleiben
+  // grundsätzlich draußen: Feeds werden von Kalender-Apps ohne Anmeldung
+  // abgerufen, wer die URL kennt, käme sonst an interne Daten.
   return getDb()
     .prepare(
-      `SELECT id, title, start_time, end_time, all_day, location, description,
-              external_uid, in_hall, updated_at
-       FROM events
-       WHERE start_time >= ?
-       ORDER BY start_time ASC`
+      `SELECT e.id, e.title, e.start_time, e.end_time, e.all_day, e.location,
+              e.description, e.external_uid, e.in_hall, e.updated_at
+       FROM events e
+       JOIN categories c ON e.category_id = c.id
+       WHERE e.start_time >= ? AND c.login_required = 0
+       ORDER BY e.start_time ASC`
     )
     .all(von.toISOString());
 }

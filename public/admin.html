@@ -21,8 +21,8 @@
     <!-- Tabs -->
     <div class="admin-tabs">
       <div class="admin-tab active" data-tab="events" onclick="switchTab('events')">📅 Termine</div>
-      <div class="admin-tab" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
-      <div class="admin-tab" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
+      <div class="admin-tab not-eismeister" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
+      <div class="admin-tab not-eismeister" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
       <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
     </div>
 
@@ -179,6 +179,16 @@
                 <label for="categoryGroupByTitle">In Abrechnung nach Titel aufschlüsseln</label>
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group checkbox-group">
+                <input type="checkbox" id="categoryLoginRequired">
+                <label for="categoryLoginRequired">Nur für angemeldete Benutzer sichtbar</label>
+              </div>
+              <div class="form-group checkbox-group">
+                <input type="checkbox" id="categoryEismeisterManaged">
+                <label for="categoryEismeisterManaged">Von Eismeistern verwaltbar</label>
+              </div>
+            </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="categorySubmitBtn">Kategorie erstellen</button>
               <button type="button" class="btn btn-outline" onclick="resetCategoryForm()" style="display:none" id="categoryCancelBtn">Abbrechen</button>
@@ -194,6 +204,7 @@
               <th>Name</th>
               <th>Sortierung</th>
               <th>Abrechnung</th>
+              <th>Sichtbarkeit</th>
               <th class="actions admin-only">Aktionen</th>
             </tr>
           </thead>
@@ -279,6 +290,7 @@
                 <label for="userRole">Rolle *</label>
                 <select id="userRole" required>
                   <option value="editor">Editor</option>
+                  <option value="eismeister">Eismeister</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

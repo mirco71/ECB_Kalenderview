@@ -32,7 +32,7 @@ siehe `DatabaseWrapper._save()`). Das heißt:
 | id | INTEGER PK AUTOINCREMENT | |
 | username | TEXT UNIQUE NOT NULL | |
 | password_hash | TEXT NOT NULL | bcrypt, 12 Runden |
-| role | TEXT NOT NULL DEFAULT 'editor' | CHECK IN ('admin', 'editor') |
+| role | TEXT NOT NULL DEFAULT 'editor' | CHECK IN ('admin', 'editor', 'eismeister') |
 | display_name | TEXT NOT NULL | |
 | created_at / updated_at | TEXT | `datetime('now')` |
 
@@ -45,6 +45,13 @@ siehe `DatabaseWrapper._save()`). Das heißt:
 | color_bg | TEXT NOT NULL | Hex oder `rgb()`/`rgba()`, validiert (verhindert CSS-Injection in inline `style=""`) |
 | sort_order | INTEGER NOT NULL DEFAULT 0 | Anzeigereihenfolge |
 | group_by_title | INTEGER NOT NULL DEFAULT 0 | Steuert Aufschlüsselung nach Titel in der Abrechnung (`/api/stats`); default an nur für *Hobbies* (id 5) |
+| login_required | INTEGER NOT NULL DEFAULT 0 | Termine dieser Kategorie nur für angemeldete Benutzer sichtbar — sie fehlen in der öffentlichen Kalenderansicht **und in allen iCalendar-Feeds** (die kennen keine Anmeldung) |
+| eismeister_managed | INTEGER NOT NULL DEFAULT 0 | Die Rolle `eismeister` darf Termine dieser Kategorie anlegen, bearbeiten und löschen |
+
+Die beiden letzten Kennzeichen sind bewusst **getrennt** schaltbar: eine interne
+Vermietung soll nicht automatisch in den Eismeister-Bereich fallen, und eine
+Eismeister-Kategorie kann öffentlich sein. Die geseedete Kategorie *Eismeister*
+hat beide gesetzt.
 
 ### `series`
 
@@ -146,6 +153,26 @@ Wort-Teams bleiben dabei unverändert.
 > die Einheiten parallel, müssen sie in Kalenderview von Hand zu einer
 > zusammengeführt werden (eine löschen, die andere auf `U13/15` umbenennen).
 > Unterbleibt das, zählt die Abrechnung die Eiszeit doppelt.
+
+## Rollen-Migration: Tabellen-Neuaufbau
+
+SQLite kann eine `CHECK`-Constraint nicht per `ALTER TABLE` ändern, und
+`CREATE TABLE IF NOT EXISTS` fasst bestehende Tabellen nicht an. In gewachsenen
+Datenbanken steckt deshalb noch `CHECK (role IN ('admin','editor'))`, und das
+Anlegen eines Eismeisters würde dort scheitern — lokal im Test (frische
+In-Memory-DB) dagegen funktionieren.
+
+`migrateEismeisterRolle()` in `server/database.js` baut die Tabelle deshalb einmalig
+neu: neue Tabelle anlegen, Daten kopieren, alte löschen, umbenennen. Die
+Fremdschlüssel müssen dabei aus sein (`PRAGMA foreign_keys = OFF`), weil
+`events.created_by` und `series.created_by` auf `users(id)` verweisen. Die
+Migration erkennt am DDL in `sqlite_master`, ob sie schon gelaufen ist, und ist
+damit idempotent. **Vor einem Deploy, der diese Migration mitbringt, ein Backup
+des Volumes ziehen.**
+
+Gleiches Muster gilt für künftige Rollen: die Rollenliste steht an drei Stellen —
+`CREATE TABLE users` und `migrateEismeisterRolle()` in `server/database.js` sowie
+`ROLLEN` in `server/routes/users.js`.
 
 ## Migrationen
 

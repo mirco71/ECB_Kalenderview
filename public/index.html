@@ -11,10 +11,17 @@
     <div class="header">
       <h1 id="kalenderName">📅 Kalender</h1>
       <div class="nav-controls">
-        <button class="nav-btn" onclick="vorherigeWoche()">← Vorherige</button>
+        <div class="view-switch">
+          <button class="nav-btn view-btn active" id="btnWoche" onclick="setzeAnsicht('woche')">Woche</button>
+          <button class="nav-btn view-btn" id="btnMonat" onclick="setzeAnsicht('monat')">Monat</button>
+        </div>
+        <button class="nav-btn" id="btnMonatZurueck" onclick="vorherigerMonat()" title="Einen Monat zurück">«</button>
+        <button class="nav-btn" onclick="zurueck()">← Vorherige</button>
         <span class="week-info" id="weekInfo">KW --</span>
-        <button class="nav-btn" onclick="heutigeWoche()">Heute</button>
-        <button class="nav-btn" onclick="naechsteWoche()">Nächste →</button>
+        <button class="nav-btn" onclick="vor()">Nächste →</button>
+        <button class="nav-btn" id="btnMonatVor" onclick="naechsterMonat()" title="Einen Monat vor">»</button>
+        <button class="nav-btn" onclick="heuteAnzeigen()">Heute</button>
+        <input type="date" class="nav-date" id="datumSprung" onchange="springeZuDatum(this.value)" title="Zu Datum springen">
       </div>
     </div>
     

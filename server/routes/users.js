@@ -8,6 +8,9 @@ const router = express.Router();
 
 const BCRYPT_ROUNDS = 12;
 
+// Muss mit der CHECK-Constraint der users-Tabelle übereinstimmen (database.js).
+const ROLLEN = ['admin', 'editor', 'eismeister'];
+
 // All user routes require admin
 router.use(requireAuth, requireAdmin);
 
@@ -26,7 +29,7 @@ router.post(
   [
     body('username').trim().isLength({ min: 3 }).withMessage('Benutzername muss mindestens 3 Zeichen lang sein'),
     body('password').isLength({ min: 6 }).withMessage('Passwort muss mindestens 6 Zeichen lang sein'),
-    body('role').isIn(['admin', 'editor']).withMessage('Rolle muss "admin" oder "editor" sein'),
+    body('role').isIn(ROLLEN).withMessage('Rolle muss "admin", "editor" oder "eismeister" sein'),
     body('display_name').trim().notEmpty().withMessage('Anzeigename erforderlich'),
   ],
   (req, res) => {
@@ -65,7 +68,7 @@ router.put(
     param('id').isInt(),
     body('username').optional().trim().isLength({ min: 3 }),
     body('password').optional().isLength({ min: 6 }),
-    body('role').optional().isIn(['admin', 'editor']),
+    body('role').optional().isIn(ROLLEN),
     body('display_name').optional().trim().notEmpty(),
   ],
   (req, res) => {
