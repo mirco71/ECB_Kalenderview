@@ -186,7 +186,7 @@ async function ladeMonat() {
     startStunde = result.startStunde;
     endStunde = result.endStunde;
 
-    document.getElementById('kalenderName').textContent = '📅 ' + result.kalenderName;
+    setzeKalenderName(result.kalenderName);
     zeigeMonat(result, rasterStart, ersterDesMonats.getMonth());
     erstelleLegende(result.termine);
   } catch (error) {
@@ -254,14 +254,19 @@ function berechneUeberlappungsLayout(termine) {
 
 // ============ RENDER CALENDAR ============
 
+// Kopfzeile und Browser-Tab zeigen beide CALENDAR_NAME aus der Server-Konfiguration.
+function setzeKalenderName(name) {
+  document.getElementById('kalenderName').textContent = '📅 ' + name;
+  document.title = name;
+}
+
 function zeigeKalender(result) {
   if (!result.erfolg) {
     zeigeFehler(result.fehler || 'Unbekannter Fehler');
     return;
   }
 
-  document.getElementById('kalenderName').textContent =
-    '📅 ' + result.kalenderName;
+  setzeKalenderName(result.kalenderName);
 
   startStunde = result.startStunde;
   endStunde = result.endStunde;
