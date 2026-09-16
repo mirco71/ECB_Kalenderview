@@ -8,6 +8,11 @@ const { dbReady } = require('./database');
 
 const app = express();
 
+// Trust exactly one proxy hop (the Cloudflare tunnel in front of the container),
+// so req.ip is the client IP instead of the tunnel's. Without it every request
+// shares one IP and the login rate limit locks out all users at once.
+app.set('trust proxy', 1);
+
 // ============ MIDDLEWARE ============
 
 // Security headers.
@@ -43,10 +48,17 @@ if (config.corsOrigin) {
 }
 app.use(express.json());
 
-// Rate limit on auth endpoints
+// Rate limit on auth endpoints.
+// Keyed on CF-Connecting-IP: Cloudflare sets it to exactly one client IP, whereas
+// the X-Forwarded-For chain through cloudflared can come out wrong when the
+// original request already carried the header. Falls back to req.ip without the
+// tunnel (local dev, tests).
+// Caveat: a client reaching the published container port directly bypasses
+// Cloudflare and can forge this header as well — only closing that port fixes it.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // 20 attempts per window
+  keyGenerator: req => req.get('CF-Connecting-IP') || req.ip,
   message: { error: 'Zu viele Anmeldeversuche. Bitte versuchen Sie es später erneut.' },
 });
 

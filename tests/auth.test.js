@@ -9,14 +9,14 @@ process.env.PORT = '0';
 
 let server, baseUrl;
 
-function req(method, urlPath, body = null, token = null) {
+function req(method, urlPath, body = null, token = null, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
       port: new URL(baseUrl).port,
       path: urlPath,
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
     };
     if (token) options.headers['Authorization'] = `Bearer ${token}`;
 
@@ -97,5 +97,23 @@ describe('Auth API', () => {
   it('should reject login with missing fields', async () => {
     const res = await req('POST', '/api/auth/login', { username: 'admin' });
     expect(res.status).toBe(400);
+  });
+
+  // Behind the Cloudflare tunnel all requests arrive from cloudflared; the limit
+  // must count per real client (CF-Connecting-IP), not lock everyone out at once.
+  it('should rate-limit logins per CF-Connecting-IP', async () => {
+    const angreifer = { 'CF-Connecting-IP': '203.0.113.7' };
+    const falsch = { username: 'admin', password: 'wrongpassword' };
+
+    for (let i = 0; i < 20; i++) {
+      await req('POST', '/api/auth/login', falsch, null, angreifer);
+    }
+    const gesperrt = await req('POST', '/api/auth/login', falsch, null, angreifer);
+    expect(gesperrt.status).toBe(429);
+
+    const andererClient = await req('POST', '/api/auth/login', {
+      username: 'admin', password: 'testpass123',
+    }, null, { 'CF-Connecting-IP': '198.51.100.23' });
+    expect(andererClient.status).toBe(200);
   });
 });
