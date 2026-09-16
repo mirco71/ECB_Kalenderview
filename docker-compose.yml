@@ -1,3 +1,7 @@
+# Standard-Variante mit veröffentlichtem Port. Hinter einem Cloudflare Tunnel
+# stattdessen docker-compose.tunnel.yml verwenden. Die Service-Definition beider
+# Dateien synchron halten.
+
 services:
   ecb-kalender:
     build:

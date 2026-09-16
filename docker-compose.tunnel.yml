@@ -1,0 +1,47 @@
+# Variante für den Betrieb hinter einem Cloudflare Tunnel.
+#
+# Unterschied zu docker-compose.yml: kein veröffentlichter Port. Die App ist
+# nur über das externe Docker-Netz "ecb-tunnel" erreichbar, an dem auch der
+# cloudflared-Container hängt. Ein Aufruf am Tunnel vorbei (Host-IP:3050) ist
+# damit nicht mehr möglich — sonst ließe sich CF-Connecting-IP fälschen und die
+# Login-Sperre umgehen (siehe server/index.js).
+#
+# Voraussetzungen:
+#   - einmalig auf dem Host: docker network create ecb-tunnel
+#   - cloudflared-Stack ebenfalls im Netz "ecb-tunnel"
+#   - in der cloudflared config.yml: service: http://ecb-kalender:3000
+#
+# Fehlt das Netz, bricht der Deploy ab, statt den Port still wieder zu öffnen.
+#
+# Die Service-Definition mit docker-compose.yml synchron halten — insbesondere
+# container_name (cloudflared adressiert die App darüber) und den Volume-Namen
+# (sonst startet die App mit leerer Datenbank).
+
+services:
+  ecb-kalender:
+    build:
+      context: .
+    image: ecb-kalender:latest
+    container_name: ecb-kalender
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /app/data/calendar.db
+      # Pflicht für Serientermine — siehe Kommentar im Dockerfile
+      TZ: ${TZ:-Europe/Berlin}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET muss als Stack-Umgebungsvariable in Portainer gesetzt werden}
+      CALENDAR_NAME: ${CALENDAR_NAME:-Eisbelegung Eissporthalle Solingen}
+      START_HOUR: ${START_HOUR:-6}
+      END_HOUR: ${END_HOUR:-23}
+    volumes:
+      - ecb-data:/app/data
+    networks:
+      - ecb-tunnel
+
+volumes:
+  ecb-data:
+
+networks:
+  ecb-tunnel:
+    external: true

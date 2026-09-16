@@ -185,6 +185,57 @@ typischerweise noch:
   oder Traefik als eigener Portainer-Stack) statt des direkten Port-Mappings
 - DNS-Eintrag auf die Server-IP
 
+## 10. Betrieb hinter einem Cloudflare Tunnel
+
+Läuft vor der App ein Cloudflare Tunnel (cloudflared als eigener Container), wird
+statt `docker-compose.yml` die Datei **`docker-compose.tunnel.yml`** verwendet.
+Sie veröffentlicht **keinen Port**; die App ist nur über das externe Docker-Netz
+`ecb-tunnel` erreichbar, an dem auch cloudflared hängt.
+
+**Warum:** Die Login-Sperre zählt Fehlversuche pro `CF-Connecting-IP`. Diesen
+Header setzt Cloudflare verlässlich nur auf dem Weg durch den Tunnel. Ist Port
+`3050` am Host offen, kann jeder im selben Netz die App direkt aufrufen, den
+Header selbst setzen und die Sperre so umgehen.
+
+### Umstellung ohne längeren Ausfall
+
+Die Reihenfolge ist wichtig. Wird die App zuerst umgestellt, ist Port 3050 zu,
+während cloudflared noch darauf zeigt, und der Tunnel liefert 502.
+
+1. **Netz anlegen** (einmalig, per SSH auf dem Docker-Host):
+   ```
+   docker network create ecb-tunnel
+   ```
+2. **cloudflared-Stack ins Netz hängen:** im Compose des cloudflared-Stacks
+   `networks: [ecb-tunnel]` am Service und `networks: { ecb-tunnel: { external: true } }`
+   ergänzen, Stack neu deployen. Die `service:`-Zeile in der `config.yml` bleibt
+   vorerst unverändert — der Tunnel läuft weiter über den alten Weg.
+3. **Datenbank sichern**, dann **App-Stack umstellen:** Stack → **Compose path**
+   auf `docker-compose.tunnel.yml` ändern → **Pull and redeploy**. Ab jetzt ist
+   Port 3050 geschlossen.
+   Lässt Portainer das Feld bei einem bestehenden Git-Stack nicht ändern: Stack
+   löschen (ohne Volumes) und **unter demselben Stack-Namen** mit dem neuen
+   Compose path neu anlegen. Das Datenbank-Volume wird über den Stack-Namen
+   zugeordnet und bleibt erhalten.
+4. **cloudflared umstellen:** in der `config.yml`
+   ```
+   service: http://ecb-kalender:3000
+   ```
+   eintragen und den cloudflared-Container neu starten. Zwischen Schritt 3 und 4
+   ist die Seite über den Tunnel kurz nicht erreichbar.
+
+### Prüfen
+
+- Seite über die Tunnel-Domain lädt, Login funktioniert
+- Direktaufruf `http://<Host-IP>:3050` schlägt fehl
+- Auf dem Host: `ss -tlnp | grep 3050` liefert nichts
+
+### Pflege
+
+Die Service-Definition steht in beiden Compose-Dateien und muss synchron
+gehalten werden — vor allem `container_name` (cloudflared adressiert die App
+darüber) und der Volume-Name (sonst startet die App mit leerer Datenbank).
+
 ## Troubleshooting
 
 | Problem | Lösung |
@@ -197,3 +248,5 @@ typischerweise noch:
 | "pull access denied for ecb-kalender … repository does not exist" | Beim Redeploy "Re-pull image" deaktiviert lassen (Schritt 8) — das Image wird lokal gebaut, nicht aus einer Registry gezogen |
 | Seite lädt, aber ohne Styling (CSS/JS-Fehler `ERR_SSL_PROTOCOL_ERROR`) | Alter Stand — sicherstellen, dass der Commit mit deaktiviertem `upgrade-insecure-requests` deployt ist, dann Browser hart neu laden (Strg+F5) |
 | Repo nicht auffindbar / 404 beim Klonen | Authentication nicht aktiviert oder falscher Username/Token — Schritt 1b prüfen |
+| Deploy mit `docker-compose.tunnel.yml` bricht ab: "network ecb-tunnel declared as external, but could not be found" | Netz fehlt auf dem Host — `docker network create ecb-tunnel` (Schritt 10) |
+| Tunnel liefert 502 nach der Umstellung | cloudflared zeigt noch auf `Host-IP:3050` oder hängt nicht im Netz `ecb-tunnel` — Schritte 2 und 4 prüfen |
