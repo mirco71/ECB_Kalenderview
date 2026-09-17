@@ -273,6 +273,39 @@ function migrate() {
   try { db.exec('ALTER TABLE categories ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE categories ADD COLUMN eismeister_managed INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
 
+  // Dauerhafte Tokens für den Abgleich aus Hallenplanung. Gespeichert wird nur
+  // der SHA-256-Hash — im Klartext ist ein Token einmal beim Erzeugen sichtbar.
+  // Kein bcrypt: Der Wert ist zufällig und lang genug, ein langsamer Hash würde
+  // hier nur jeden Abgleich bremsen, ohne Angriffe zu erschweren.
+  // `prefix` sind die ersten Zeichen des Tokens, damit die Liste im Admin
+  // erkennbar bleibt, ohne das Geheimnis zu speichern.
+  db.exec(`CREATE TABLE IF NOT EXISTS sync_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    token_hash TEXT UNIQUE NOT NULL,
+    prefix TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT DEFAULT NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+
+  // Ein Eintrag je ausgeführtem Abgleich. Speist die Anzeige "zuletzt
+  // veröffentlicht von … am …" in der Vorschau von Hallenplanung. token_id und
+  // user_id bewusst ohne Fremdschlüssel: Der Eintrag soll ein widerrufenes Token
+  // überdauern, sonst verschwände die Historie mit ihm.
+  db.exec(`CREATE TABLE IF NOT EXISTS sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ran_at TEXT NOT NULL DEFAULT (datetime('now')),
+    endpoint TEXT NOT NULL,
+    token_id INTEGER DEFAULT NULL,
+    token_label TEXT DEFAULT NULL,
+    user_id INTEGER DEFAULT NULL,
+    angelegt INTEGER NOT NULL DEFAULT 0,
+    geaendert INTEGER NOT NULL DEFAULT 0,
+    geloescht INTEGER NOT NULL DEFAULT 0
+  )`);
+
   migrateEismeisterRolle();
   seedEismeisterKategorie();
 }

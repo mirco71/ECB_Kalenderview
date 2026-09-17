@@ -24,6 +24,7 @@
       <div class="admin-tab not-eismeister" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
       <div class="admin-tab not-eismeister" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
       <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
+      <div class="admin-tab admin-only" data-tab="synctokens" onclick="switchTab('synctokens')">🔑 Sync-Tokens</div>
     </div>
 
     <!-- Content -->
@@ -315,6 +316,53 @@
           </thead>
           <tbody id="usersTableBody">
             <tr><td colspan="5" style="text-align:center;color:#999">Lade...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ============ SYNC-TOKENS TAB ============ -->
+      <div class="tab-panel" id="tab-synctokens">
+        <div class="form-section">
+          <h3>Neues Sync-Token</h3>
+          <p class="hint">
+            Dauerhaftes Token für den Abgleich aus Hallenplanung. Es läuft nicht ab,
+            gilt nur für den Abgleich und lässt sich jederzeit widerrufen.
+            Je Rechner ein eigenes Token anlegen.
+          </p>
+          <form id="syncTokenForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="syncTokenLabel">Bezeichnung *</label>
+                <input type="text" id="syncTokenLabel" placeholder="z. B. Hallenplanung Jugendobfrau" required>
+              </div>
+              <div class="form-group" style="justify-content:flex-end">
+                <button type="submit" class="btn btn-primary">Token erstellen</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="syncTokenResult" class="token-result" style="display:none">
+            <strong>⚠️ Einmalige Anzeige — jetzt kopieren und in Hallenplanung eintragen.</strong>
+            <code id="syncTokenValue"></code>
+            <button type="button" class="btn btn-outline btn-sm" onclick="kopiereSyncToken()">Kopieren</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="verbergeSyncToken()">Fertig</button>
+          </div>
+        </div>
+
+        <h3>Vorhandene Tokens</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Bezeichnung</th>
+              <th>Beginnt mit</th>
+              <th>Erstellt von</th>
+              <th>Erstellt am</th>
+              <th>Zuletzt benutzt</th>
+              <th class="actions">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="syncTokensTableBody">
+            <tr><td colspan="6" style="text-align:center;color:#999">Lade...</td></tr>
           </tbody>
         </table>
       </div>

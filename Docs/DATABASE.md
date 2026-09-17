@@ -154,6 +154,37 @@ Wort-Teams bleiben dabei unverändert.
 > zusammengeführt werden (eine löschen, die andere auf `U13/15` umbenennen).
 > Unterbleibt das, zählt die Abrechnung die Eiszeit doppelt.
 
+### `sync_tokens`
+
+Dauerhafte Tokens für den Abgleich aus Hallenplanung, je Rechner eines.
+
+| Spalte | Typ | Hinweise |
+|---|---|---|
+| id | INTEGER PK | |
+| label | TEXT NOT NULL | freie Bezeichnung, z. B. „Hallenplanung Jugendobfrau"; dient dem Wiedererkennen beim Widerrufen |
+| token_hash | TEXT UNIQUE NOT NULL | SHA-256 des Tokens. **Kein bcrypt**: Der Wert ist zufällig und lang, ein langsamer Hash würde nur jeden Abgleich bremsen |
+| prefix | TEXT NOT NULL | erste Zeichen des Tokens für die Anzeige in der Liste |
+| created_by | INTEGER | FK → users.id; auf dieses Konto laufen die per Token angelegten Termine |
+| created_at / last_used_at | TEXT | `last_used_at` beantwortet „wird dieser Rechner noch benutzt" |
+
+Der Klartext existiert nur einmal, in der Antwort von `POST /api/sync-tokens`.
+Erzeugung und Prüfung in `server/synctoken.js`.
+
+### `sync_log`
+
+Ein Eintrag je **ausgeführtem** Abgleich (Probeläufe nicht). Speist
+`GET /api/sync/status` und damit die Anzeige „zuletzt veröffentlicht von … am …"
+in der Vorschau von Hallenplanung.
+
+| Spalte | Typ | Hinweise |
+|---|---|---|
+| id | INTEGER PK | |
+| ran_at | TEXT | |
+| endpoint | TEXT NOT NULL | `calendar` oder `training` |
+| token_id / token_label | INTEGER / TEXT | **ohne Fremdschlüssel** und mit kopierter Bezeichnung: Der Eintrag soll ein widerrufenes Token überdauern, sonst verschwände die Historie mit ihm |
+| user_id | INTEGER | |
+| angelegt / geaendert / geloescht | INTEGER | |
+
 ## Rollen-Migration: Tabellen-Neuaufbau
 
 SQLite kann eine `CHECK`-Constraint nicht per `ALTER TABLE` ändern, und

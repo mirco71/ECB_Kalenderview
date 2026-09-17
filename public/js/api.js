@@ -138,6 +138,20 @@ const API = {
     return this.request('DELETE', `/api/users/${id}`);
   },
 
+  // ============ SYNC-TOKENS (admin) ============
+
+  async getSyncTokens() {
+    return this.request('GET', '/api/sync-tokens');
+  },
+
+  async createSyncToken(label) {
+    return this.request('POST', '/api/sync-tokens', { label });
+  },
+
+  async deleteSyncToken(id) {
+    return this.request('DELETE', `/api/sync-tokens/${id}`);
+  },
+
   // ============ CONFIG ============
 
   async getConfig() {

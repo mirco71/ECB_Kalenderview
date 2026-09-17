@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
 const { getDb } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireSyncAuth } = require('../middleware/syncAuth');
 const {
   localDateTime,
   toLocalDateString,
@@ -35,6 +35,40 @@ const MAX_DETAILS = 50;
  * hier werden sie verworfen.
  */
 const IGNORIERTE_ARTEN = new Set(['blocker']);
+
+/**
+ * Notbremse gegen einen Abgleich aus veraltetem Datenstand.
+ *
+ * Hallenplanung läuft auf mehreren Rechnern mit je eigener Datenbank. Wer
+ * zuletzt veröffentlicht, gewinnt — ein Push aus einem alten Stand würde
+ * Spiele löschen, die ein anderer Rechner angelegt hat. Deshalb bricht der
+ * Abgleich ab, wenn er ungewöhnlich viel löschen würde.
+ *
+ * Beide Schwellen müssen überschritten sein: Ohne die absolute Untergrenze
+ * schlüge die Bremse bei kleinen Beständen ständig an, ohne den Anteil bliebe
+ * sie bei großen Saisons wirkungslos. Am Saisonende, wo viele Löschungen
+ * richtig sind, bestätigt man einmal mit force=true.
+ */
+const LOESCH_GRENZE_ABSOLUT = 10;
+const LOESCH_GRENZE_ANTEIL = 0.25;
+
+function loeschBremseGreift(zuLoeschen, bestand) {
+  return zuLoeschen > LOESCH_GRENZE_ABSOLUT && zuLoeschen > bestand * LOESCH_GRENZE_ANTEIL;
+}
+
+/** Hält fest, wer wann was abgeglichen hat — Grundlage der Status-Anzeige. */
+function protokolliere(db, req, endpoint, zahlen) {
+  db.prepare(
+    `INSERT INTO sync_log (endpoint, token_id, token_label, user_id, angelegt, geaendert, geloescht)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    endpoint,
+    req.syncToken ? req.syncToken.id : null,
+    req.syncToken ? req.syncToken.label : null,
+    req.user ? req.user.id : null,
+    zahlen.angelegt, zahlen.geaendert, zahlen.geloescht
+  );
+}
 
 /**
  * Baut aus einem Nutzlast-Termin die Spalten einer events-Zeile.
@@ -102,9 +136,10 @@ function kurz(zeile) {
 // gibt keine zweite Codepfad-Variante, die auseinanderlaufen könnte.
 router.post(
   '/calendar',
-  requireAuth,
+  requireSyncAuth,
   [
     query('dry_run').optional().isBoolean().withMessage('dry_run muss boolesch sein'),
+    query('force').optional().isBoolean().withMessage('force muss boolesch sein'),
     body('format').equals(PAYLOAD_FORMAT).withMessage(`format muss "${PAYLOAD_FORMAT}" sein`),
     body('format_version').isInt().withMessage('format_version fehlt'),
     body('season.date_from').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('season.date_from fehlt'),
@@ -184,6 +219,22 @@ router.post(
 
     const zuLoeschen = vorhanden.filter(z => !gewuenscht.has(z.external_uid));
 
+    // Der Probelauf zeigt die Zahlen immer, er schreibt ja nichts. Nur der
+    // echte Abgleich braucht die Bestätigung.
+    const erzwingen = req.query.force === 'true' || req.query.force === '1';
+    if (!probelauf && !erzwingen && loeschBremseGreift(zuLoeschen.length, vorhanden.length)) {
+      return res.status(409).json({
+        error:
+          `Der Abgleich würde ${zuLoeschen.length} von ${vorhanden.length} Terminen löschen. ` +
+          'Das deutet auf einen veralteten Datenstand hin. Stimmt die Zahl, den Abgleich mit ' +
+          'force=true wiederholen.',
+        bestaetigung_noetig: true,
+        geloescht_geplant: zuLoeschen.length,
+        bestand: vorhanden.length,
+        details: { geloescht: zuLoeschen.slice(0, MAX_DETAILS).map(kurz) },
+      });
+    }
+
     if (!probelauf) {
       // Hinweis: Der sql.js-Wrapper schreibt die komplette Datei nach jedem
       // Schreibbefehl zurück (siehe Docs/DATABASE.md). Bei einer ganzen Saison
@@ -213,6 +264,12 @@ router.post(
       for (const z of zuLoeschen) {
         db.prepare('DELETE FROM events WHERE id = ?').run(z.id);
       }
+
+      protokolliere(db, req, 'calendar', {
+        angelegt: anzulegen.length,
+        geaendert: zuAendern.length,
+        geloescht: zuLoeschen.length,
+      });
     }
 
     res.json({
@@ -245,7 +302,7 @@ router.post(
 // wird dessen Serie von Hand in Kalenderview angelegt.
 router.post(
   '/training',
-  requireAuth,
+  requireSyncAuth,
   [
     query('dry_run').optional().isBoolean().withMessage('dry_run muss boolesch sein'),
     body('format').equals(PAYLOAD_FORMAT).withMessage(`format muss "${PAYLOAD_FORMAT}" sein`),
@@ -351,6 +408,12 @@ router.post(
           );
         }
       }
+
+      protokolliere(db, req, 'training', {
+        angelegt: geplant.reduce((n, s) => n + s.termine.length, 0),
+        geaendert: 0,
+        geloescht: 0,
+      });
     }
 
     res.json({
@@ -369,5 +432,39 @@ router.post(
     });
   }
 );
+
+// GET /api/sync/status — wer hat zuletzt abgeglichen und mit welchem Ergebnis.
+//
+// Hallenplanung zeigt das vor dem Veröffentlichen an. Läuft der letzte Abgleich
+// von einem anderen Rechner und liegt er kurz zurück, ist der eigene Datenstand
+// womöglich veraltet — genau die Information, die vor versehentlichem
+// Überschreiben schützt.
+router.get('/status', requireSyncAuth, (req, res) => {
+  const letzter = getDb()
+    .prepare(
+      `SELECT l.ran_at, l.endpoint, l.token_label, l.angelegt, l.geaendert, l.geloescht,
+              u.display_name AS benutzer
+       FROM sync_log l
+       LEFT JOIN users u ON l.user_id = u.id
+       ORDER BY l.id DESC
+       LIMIT 1`
+    )
+    .get();
+
+  res.json({
+    erfolg: true,
+    letzterAbgleich: letzter
+      ? {
+          zeitpunkt: letzter.ran_at,
+          endpunkt: letzter.endpoint,
+          rechner: letzter.token_label,
+          benutzer: letzter.benutzer,
+          angelegt: letzter.angelegt,
+          geaendert: letzter.geaendert,
+          geloescht: letzter.geloescht,
+        }
+      : null,
+  });
+});
 
 module.exports = router;

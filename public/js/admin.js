@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadEvents();
   if (currentUser.role === 'admin') {
     await loadUsers();
+    await loadSyncTokens();
   }
 
   initStats();
@@ -1080,4 +1081,91 @@ function resetUserForm() {
   document.getElementById('userFormTitle').textContent = 'Neuen Benutzer erstellen';
   document.getElementById('userSubmitBtn').textContent = 'Benutzer erstellen';
   document.getElementById('userCancelBtn').style.display = 'none';
+}
+
+// ============================================================
+//  SYNC-TOKENS (admin only)
+// ============================================================
+
+let syncTokens = [];
+
+async function loadSyncTokens() {
+  if (!currentUser || currentUser.role !== 'admin') return;
+
+  try {
+    syncTokens = await API.getSyncTokens();
+    const tbody = document.getElementById('syncTokensTableBody');
+
+    if (syncTokens.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999">Noch kein Token angelegt</td></tr>';
+      return;
+    }
+
+    // Nur die numerische ID landet im Handler; die Bezeichnung wird beim
+    // Widerrufen aus `syncTokens` nachgeschlagen.
+    tbody.innerHTML = syncTokens.map(t => `
+      <tr>
+        <td>${escapeHtml(t.label)}</td>
+        <td><code>${escapeHtml(t.prefix)}…</code></td>
+        <td>${escapeHtml(t.created_by_name || '—')}</td>
+        <td>${formatDatetime(t.created_at)}</td>
+        <td>${t.last_used_at ? formatDatetime(t.last_used_at) : 'nie'}</td>
+        <td class="actions">
+          <button class="btn-icon" title="Widerrufen" onclick="deleteSyncToken(${t.id})">🗑️</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    showToast('Sync-Tokens laden fehlgeschlagen: ' + err.message, 'error');
+  }
+}
+
+document.getElementById('syncTokenForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const label = document.getElementById('syncTokenLabel').value;
+
+  try {
+    const neu = await API.createSyncToken(label);
+    // Einzige Gelegenheit, den Klartext zu sehen — gespeichert ist nur der Hash.
+    document.getElementById('syncTokenValue').textContent = neu.token;
+    document.getElementById('syncTokenResult').style.display = '';
+    document.getElementById('syncTokenForm').reset();
+    showToast('Token erstellt');
+    await loadSyncTokens();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+async function kopiereSyncToken() {
+  const wert = document.getElementById('syncTokenValue').textContent;
+  try {
+    await navigator.clipboard.writeText(wert);
+    showToast('Token in die Zwischenablage kopiert');
+  } catch (err) {
+    showToast('Kopieren nicht möglich — Wert von Hand markieren', 'error');
+  }
+}
+
+function verbergeSyncToken() {
+  document.getElementById('syncTokenResult').style.display = 'none';
+  document.getElementById('syncTokenValue').textContent = '';
+}
+
+async function deleteSyncToken(id) {
+  const token = syncTokens.find(t => t.id === id);
+  const label = token ? token.label : '';
+  if (!confirm(
+    `Token "${label}" widerrufen?\n\n` +
+    'Der Rechner, auf dem es eingetragen ist, kann danach nicht mehr veröffentlichen, ' +
+    'bis dort ein neues Token hinterlegt wird.'
+  )) return;
+
+  try {
+    await API.deleteSyncToken(id);
+    showToast('Token widerrufen');
+    await loadSyncTokens();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }

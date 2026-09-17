@@ -71,6 +71,7 @@ app.use('/api/categories', require('./routes/categories'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/sync', require('./routes/sync'));
+app.use('/api/sync-tokens', require('./routes/syncTokens'));
 
 // Öffentliche iCalendar-Feeds. Ohne /api-Präfix, weil die URL in
 // Kalender-Apps von Hand eingetragen wird und kurz bleiben soll. Muss vor

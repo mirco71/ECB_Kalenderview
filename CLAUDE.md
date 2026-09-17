@@ -50,6 +50,10 @@ npm run seed    # Ersten Admin-User anlegen (admin/admin123 per Default)
   Wer eine weitere Rolle ergänzt, muss drei Stellen anfassen (`CREATE TABLE users`,
   die Rebuild-Migration, `ROLLEN` in `server/routes/users.js`) — und vor dem Deploy
   ein Backup ziehen. Details in [Docs/DATABASE.md](Docs/DATABASE.md).
+- **Sync-Tokens gelten nur für `/api/sync`**: `requireSyncAuth` (`server/middleware/syncAuth.js`)
+  akzeptiert sie, überall sonst lehnt `requireAuth` sie ab. Diese Beschränkung ist
+  Absicht — wer sie aufweicht, gibt einem Token, das auf fremden Rechnern in einer
+  Konfigurationsdatei liegt, Zugriff auf Benutzer und Kategorien.
 - **Nicht-öffentliche Termine haben zwei Austrittspfade**: `/api/events` (inkl. `/:id`)
   und die iCalendar-Feeds. Wer an der Sichtbarkeit arbeitet, muss `login_required`
   in beiden filtern — `server/routes/feeds.js` hat keine Anmeldung und ist der

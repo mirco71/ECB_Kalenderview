@@ -360,6 +360,38 @@ body {
 .toast.success { background: #0d904f; }
 .toast.error { background: #c5221f; }
 
+/* ============ SYNC-TOKENS ============ */
+
+.hint {
+  font-size: 13px;
+  color: #777;
+  margin-bottom: 15px;
+  line-height: 1.5;
+}
+
+/* Einmalige Klartext-Anzeige eines frisch erzeugten Tokens. Bewusst auffällig:
+   Wer sie wegklickt, ohne zu kopieren, muss ein neues Token erzeugen. */
+.token-result {
+  margin-top: 15px;
+  padding: 12px 14px;
+  background: #fff8e1;
+  border: 1px solid #ffd54f;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.token-result code {
+  display: block;
+  margin: 10px 0;
+  padding: 10px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
+}
+
 /* ============ MODE SWITCH (Einzel-/Serientermin) ============ */
 
 .mode-switch {

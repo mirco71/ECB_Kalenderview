@@ -144,12 +144,48 @@ Abonnenten eine Verschiebung als Änderung und nicht als neuen Termin.
 `Cache-Control: max-age=300` — der Feed wird von vielen Geräten abgerufen, soll
 nach einer Absage aber nicht lange veraltet ausgeliefert werden.
 
-## Abgleich mit Hallenplanung (JWT)
+## Abgleich mit Hallenplanung (Sync-Token oder JWT)
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| POST | `/api/sync/calendar[?dry_run=true]` | Gleicht die **Spiele** aus Hallenplanung gegen den Bestand ab: neue anlegen, geänderte aktualisieren, im Zeitraum fehlende löschen |
+| POST | `/api/sync/calendar[?dry_run=true][&force=true]` | Gleicht die **Spiele** aus Hallenplanung gegen den Bestand ab: neue anlegen, geänderte aktualisieren, im Zeitraum fehlende löschen |
 | POST | `/api/sync/training[?dry_run=true]` | **Einmalige** Grundstock-Übertragung der Trainingszeiten als Serien. Ein zweiter Aufruf wird mit `409` abgelehnt |
+| GET | `/api/sync/status` | Letzter ausgeführter Abgleich: Zeitpunkt, Rechner (Token-Bezeichnung), Benutzer und Zahlen. Hallenplanung zeigt das vor dem Veröffentlichen an |
+
+### Anmeldung: Sync-Token
+
+Diese drei Endpunkte akzeptieren neben dem normalen Anmelde-Token auch ein
+**Sync-Token** (`Authorization: Bearer ecbsync_…`), siehe `middleware/syncAuth.js`.
+Grund: Das Anmelde-Token läuft nach 24 Stunden ab und müsste sonst täglich von
+Hand nachgeholt werden.
+
+Ein Sync-Token gehört zu einem **Rechner**, nicht zu einer Person. Es läuft nicht
+ab, ist einzeln widerrufbar und gilt **ausschließlich hier** — überall sonst
+greift `requireAuth`, das den Wert nicht als JWT verifizieren kann und mit `401`
+ablehnt. Termine, die über ein Sync-Token entstehen, laufen auf dem Konto, das
+das Token erzeugt hat.
+
+### Notbremse gegen veralteten Datenstand
+
+Hallenplanung läuft auf mehreren Rechnern mit je eigener Datenbank, und der
+Abgleich gleicht einen Sollzustand ab — wer zuletzt veröffentlicht, gewinnt.
+Damit ein Push aus einem alten Stand nicht still Spiele löscht, bricht
+`POST /api/sync/calendar` mit `409` ab, wenn er **mehr als 10** Termine **und
+mehr als ein Viertel** des Bestands löschen würde. Beide Schwellen zusammen:
+Ohne die absolute Grenze schlüge die Bremse bei kleinen Beständen ständig an,
+ohne den Anteil bliebe sie bei großen Saisons wirkungslos.
+
+Die Antwort nennt `bestaetigung_noetig`, die geplante Löschzahl und den Bestand.
+Ist die Zahl richtig (Saisonende), wiederholt man den Aufruf mit `?force=true`.
+Der Probelauf rechnet immer durch, er schreibt ja nichts.
+
+### Token-Verwaltung (nur Admin)
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| GET | `/api/sync-tokens` | Liste: Bezeichnung, Präfix, Ersteller, erstellt am, zuletzt benutzt — **nie** der Klartext |
+| POST | `/api/sync-tokens` | `{ label }` → erzeugt ein Token. Der Klartext steht **nur in dieser Antwort** |
+| DELETE | `/api/sync-tokens/:id` | Widerruft das Token. Einträge im Abgleich-Protokoll bleiben erhalten |
 
 **Nutzlast** im Format `ecb-calendar` (erzeugt von `export/calendar_model.py` in
 Hallenplanung):
