@@ -360,6 +360,50 @@ body {
 .toast.success { background: #0d904f; }
 .toast.error { background: #c5221f; }
 
+/* ============ TERMINE IM ZEITRAUM LÖSCHEN ============ */
+
+/* Roter Rand: Hier wird unwiderruflich gelöscht, der Bereich soll sich klar
+   vom übrigen Termine-Tab abheben. */
+.danger-section {
+  border-left: 4px solid #dc3545;
+}
+
+.bulk-preview {
+  margin-top: 15px;
+  padding: 12px 14px;
+  background: #fff5f5;
+  border: 1px solid #f5c2c7;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.bulk-preview ul {
+  margin: 6px 0 6px 20px;
+}
+
+.bulk-preview details ul {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Schmaler Dialog, z. B. für das Passwort */
+.modal.modal-small {
+  max-width: 420px;
+}
+
+.modal.modal-small .modal-section {
+  padding-bottom: 16px;
+}
+
+.modal.modal-small .form-group {
+  margin-bottom: 12px;
+}
+
 /* ============ SYNC-TOKENS ============ */
 
 .hint {

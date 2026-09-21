@@ -3,10 +3,9 @@ const bcrypt = require('bcryptjs');
 const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } = require('../passwords');
 
 const router = express.Router();
-
-const BCRYPT_ROUNDS = 12;
 
 // Muss mit der CHECK-Constraint der users-Tabelle übereinstimmen (database.js).
 const ROLLEN = ['admin', 'editor', 'eismeister'];
@@ -28,7 +27,8 @@ router.post(
   '/',
   [
     body('username').trim().isLength({ min: 3 }).withMessage('Benutzername muss mindestens 3 Zeichen lang sein'),
-    body('password').isLength({ min: 6 }).withMessage('Passwort muss mindestens 6 Zeichen lang sein'),
+    body('password').isLength({ min: MIN_PASSWORD_LENGTH })
+      .withMessage(`Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein`),
     body('role').isIn(ROLLEN).withMessage('Rolle muss "admin", "editor" oder "eismeister" sein'),
     body('display_name').trim().notEmpty().withMessage('Anzeigename erforderlich'),
   ],
@@ -67,7 +67,7 @@ router.put(
   [
     param('id').isInt(),
     body('username').optional().trim().isLength({ min: 3 }),
-    body('password').optional().isLength({ min: 6 }),
+    body('password').optional().isLength({ min: MIN_PASSWORD_LENGTH }),
     body('role').optional().isIn(ROLLEN),
     body('display_name').optional().trim().notEmpty(),
   ],

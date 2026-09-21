@@ -9,6 +9,7 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { getDb, dbReady } = require('./database');
+const { BCRYPT_ROUNDS } = require('./passwords');
 
 const args = process.argv.slice(2);
 
@@ -34,7 +35,7 @@ async function main() {
     process.exit(0);
   }
 
-  const passwordHash = bcrypt.hashSync(password, 12);
+  const passwordHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
 
   const result = db
     .prepare('INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)')

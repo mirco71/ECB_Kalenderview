@@ -54,6 +54,13 @@ const API = {
     return this.request('GET', '/api/auth/me');
   },
 
+  async changePassword(currentPassword, newPassword) {
+    return this.request('PUT', '/api/auth/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  },
+
   getStoredUser() {
     const raw = localStorage.getItem('ecb_user');
     return raw ? JSON.parse(raw) : null;
@@ -82,6 +89,10 @@ const API = {
 
   async deleteEvent(id) {
     return this.request('DELETE', `/api/events/${id}`);
+  },
+
+  async bulkDeleteEvents(data, dryRun) {
+    return this.request('POST', `/api/events/bulk-delete${dryRun ? '?dry_run=true' : ''}`, data);
   },
 
   // ============ SERIES ============

@@ -116,4 +116,68 @@ describe('Auth API', () => {
     }, null, { 'CF-Connecting-IP': '198.51.100.23' });
     expect(andererClient.status).toBe(200);
   });
+
+  describe('eigenes Passwort ändern', () => {
+    // Eigener Limiter-Topf: Alle /api/auth-Aufrufe zählen gegen die Login-Sperre,
+    // ohne eigene Adresse teilten sich diese Tests das Kontingent mit den übrigen.
+    const client = { 'CF-Connecting-IP': '192.0.2.50' };
+    let token;
+
+    const anmelden = (password) =>
+      req('POST', '/api/auth/login', { username: 'editor', password }, null, client);
+
+    beforeAll(async () => {
+      const { getDb } = require('../server/database');
+      getDb()
+        .prepare('INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)')
+        .run('editor', bcrypt.hashSync('altesPasswort', 4), 'editor', 'Test Editor');
+      token = (await anmelden('altesPasswort')).body.token;
+    });
+
+    it('ändert das Passwort, danach gilt nur noch das neue', async () => {
+      const res = await req('PUT', '/api/auth/password', {
+        current_password: 'altesPasswort',
+        new_password: 'neuesPasswort',
+      }, token, client);
+      expect(res.status).toBe(200);
+
+      expect((await anmelden('neuesPasswort')).status).toBe(200);
+      expect((await anmelden('altesPasswort')).status).toBe(401);
+    });
+
+    it('lehnt ein falsches aktuelles Passwort ab', async () => {
+      const res = await req('PUT', '/api/auth/password', {
+        current_password: 'geraten',
+        new_password: 'nochNeuer1',
+      }, token, client);
+      expect(res.status).toBe(401);
+
+      // Unverändert: das zuletzt gesetzte Passwort gilt weiter
+      expect((await anmelden('neuesPasswort')).status).toBe(200);
+    });
+
+    it('lehnt ein zu kurzes neues Passwort ab', async () => {
+      const res = await req('PUT', '/api/auth/password', {
+        current_password: 'neuesPasswort',
+        new_password: '123',
+      }, token, client);
+      expect(res.status).toBe(400);
+    });
+
+    it('verlangt eine Anmeldung', async () => {
+      const res = await req('PUT', '/api/auth/password', {
+        current_password: 'neuesPasswort',
+        new_password: 'egalWas1',
+      }, null, client);
+      expect(res.status).toBe(401);
+    });
+
+    it('lehnt ein Sync-Token ab', async () => {
+      const res = await req('PUT', '/api/auth/password', {
+        current_password: 'neuesPasswort',
+        new_password: 'egalWas1',
+      }, 'ecbsync_irgendwas', client);
+      expect(res.status).toBe(401);
+    });
+  });
 });

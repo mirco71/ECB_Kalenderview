@@ -47,10 +47,30 @@ Token wird wie „nicht angemeldet" behandelt.
 |---|---|---|
 | POST | `/api/auth/login` | `{ username, password }` → `{ token, user }`. Rate-limited (20/15min). |
 | GET | `/api/auth/me` | Aktueller User aus Token |
+| PUT | `/api/auth/password` | Eigenes Passwort ändern, alle Rollen. `{ current_password, new_password }` (min. 6 Zeichen). Falsches aktuelles Passwort → `401`. Liegt hinter dem Login-Rate-Limiter. Bereits ausgestellte Tokens bleiben bis zu ihrem Ablauf gültig |
 | POST | `/api/events` | Einzeltermin erstellen (kein Serien-Parameter — dafür `/api/events/series`) |
 | PUT | `/api/events/:id` | Termin aktualisieren (Partial Update, betrifft nur diesen einen Termin, auch bei Serien) |
 | DELETE | `/api/events/:id` | Einzelnen Termin löschen — bei einem Serientermin bleibt die Serie bestehen |
+| POST | `/api/events/bulk-delete[?dry_run=true]` | **Nur Admin.** Alle Termine der gewählten Kategorien löschen, die im Zeitraum beginnen. Details siehe unten |
 | GET | `/api/stats?start=ISO&end=ISO&category_ids=5,7,8[&group_by_team=1]` | Abrechnung: Anzahl + Gesamtdauer je Kategorie im Zeitraum, optional nach Titel aufgeschlüsselt (siehe `group_by_title` in [DATABASE.md](DATABASE.md)). Zählt **ausschließlich** Termine mit `in_hall = 1` — Auswärtsspiele belegen keine Eiszeit in Solingen und dürfen die Abrechnung nicht erhöhen. Response: `{ erfolg, zeitraum, termineGesamt, gruppen[], gesamt }`, mit `group_by_team=1` zusätzlich `teams[]` und `teamsHinweis` |
+
+### Termine im Zeitraum löschen
+
+`POST /api/events/bulk-delete` mit `{ date_from, date_to, category_ids: [...] }`,
+Datumsangaben als `YYYY-MM-DD`. Erfasst werden Termine, deren **Beginn** auf einen
+lokalen Kalendertag im Zeitraum fällt, erster und letzter Tag inklusive — dieselbe
+Abgrenzung wie im Abgleich mit Hallenplanung.
+
+`dry_run=true` rechnet mit derselben Abfrage, schreibt aber nichts; die
+Oberfläche zeigt damit die Vorschau. Antwort in beiden Fällen:
+`{ erfolg, probelauf, zeitraum, anzahl, nachKategorie[], serienBetroffen,
+serienEntfernt, ausHallenplanung, details[] }` (höchstens 50 Einzeleinträge).
+
+Verhalten:
+- **Serien**: Nur die Einzeltermine im Zeitraum werden gelöscht. Eine betroffene Serie verschwindet erst, wenn ihr kein Termin mehr bleibt
+- **Spiele aus Hallenplanung** werden mitgelöscht und beim nächsten Veröffentlichen wieder angelegt
+- **Google-Kalender**: Die Bridge gleicht mit Kalenderview ab, Gelöschtes verschwindet beim nächsten Lauf auch dort
+- Gelöscht wird mit einem einzigen Befehl — der sql.js-Wrapper schreibt nach jedem Befehl die ganze Datenbankdatei neu
 
 ## Serientermine (JWT)
 

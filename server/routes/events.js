@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { body, query, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const config = require('../config');
-const { requireAuth, optionalAuth } = require('../middleware/auth');
+const { requireAuth, optionalAuth, requireAdmin } = require('../middleware/auth');
 const {
   toLocalDateString,
   toLocalTimeString,
@@ -272,6 +272,112 @@ router.delete('/:id', requireAuth, param('id').isInt(), (req, res) => {
   db.prepare('DELETE FROM events WHERE id = ?').run(parseInt(req.params.id));
   res.json({ erfolg: true, message: 'Termin gelöscht' });
 });
+
+// ============ BULK DELETE ============
+
+/** So viele Einträge zeigt die Vorschau höchstens einzeln an. */
+const MAX_DETAILS = 50;
+
+// POST /api/events/bulk-delete[?dry_run=true] — alle Termine eines Zeitraums
+// in den gewählten Kategorien löschen (nur Admin).
+//
+// Zeitraum wie im Abgleich mit Hallenplanung (sync.js): lokale Kalendertage,
+// abgegrenzt über start_time statt Überlappung. dry_run rechnet mit derselben
+// Abfrage und schreibt nichts, damit Vorschau und Löschung nie auseinanderlaufen.
+//
+// Folgen, die der Aufrufer kennen muss: Spiele aus Hallenplanung kommen beim
+// nächsten Veröffentlichen zurück, und die Bridge entfernt Gelöschtes auch aus
+// den Google-Kalendern. Die Oberfläche nennt das vor der Bestätigung.
+router.post(
+  '/bulk-delete',
+  requireAuth,
+  requireAdmin,
+  [
+    query('dry_run').optional().isBoolean().withMessage('dry_run muss boolesch sein'),
+    body('date_from').matches(DATE_PATTERN).withMessage('Ungültiges Startdatum'),
+    body('date_to').matches(DATE_PATTERN).withMessage('Ungültiges Enddatum'),
+    body('category_ids').isArray({ min: 1 }).withMessage('Mindestens eine Kategorie auswählen'),
+    body('category_ids.*').isInt({ min: 1 }).withMessage('Ungültige Kategorie'),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { date_from, date_to } = req.body;
+    if (date_to < date_from) {
+      return res.status(400).json({ error: 'Das Enddatum muss nach dem Startdatum liegen' });
+    }
+
+    const probelauf = req.query.dry_run === 'true' || req.query.dry_run === '1';
+    const kategorien = req.body.category_ids.map(Number);
+    const von = localDateTime(date_from, '00:00').toISOString();
+    const bisDatum = localDateTime(date_to, '00:00');
+    bisDatum.setDate(bisDatum.getDate() + 1);
+    const bis = bisDatum.toISOString();
+
+    // Eine Bedingung für Vorschau und Löschung — so zählt die Vorschau exakt das,
+    // was danach gelöscht wird. `p` ist das Tabellenpräfix für die Abfrage mit JOIN.
+    const kategorieListe = kategorien.map(() => '?').join(', ');
+    const bedingung = (p = '') =>
+      `${p}start_time >= ? AND ${p}start_time < ? AND ${p}category_id IN (${kategorieListe})`;
+    const parameter = [von, bis, ...kategorien];
+
+    const db = getDb();
+    const treffer = db
+      .prepare(
+        `SELECT e.id, e.title, e.start_time, e.series_id, e.source, c.name AS category_name
+         FROM events e
+         JOIN categories c ON e.category_id = c.id
+         WHERE ${bedingung('e.')}
+         ORDER BY e.start_time ASC`
+      )
+      .all(...parameter);
+
+    const nachKategorie = new Map();
+    for (const t of treffer) {
+      nachKategorie.set(t.category_name, (nachKategorie.get(t.category_name) || 0) + 1);
+    }
+    const serienIds = [...new Set(treffer.filter(t => t.series_id).map(t => t.series_id))];
+
+    let serienEntfernt = 0;
+    if (!probelauf && treffer.length > 0) {
+      // Ein einziger Befehl: Der sql.js-Wrapper schreibt nach jedem Befehl die
+      // ganze Datenbankdatei neu, Löschen Zeile für Zeile wäre entsprechend teuer.
+      db.prepare(`DELETE FROM events WHERE ${bedingung()}`).run(...parameter);
+
+      // Nur betroffene Serien, von denen kein Termin mehr übrig ist. Eine Serie
+      // mit Terminen außerhalb des Zeitraums bleibt — wie beim Löschen eines
+      // einzelnen Serientermins.
+      if (serienIds.length > 0) {
+        serienEntfernt = db
+          .prepare(
+            `DELETE FROM series
+             WHERE id IN (${serienIds.map(() => '?').join(', ')})
+               AND NOT EXISTS (SELECT 1 FROM events WHERE events.series_id = series.id)`
+          )
+          .run(...serienIds).changes;
+      }
+    }
+
+    res.json({
+      erfolg: true,
+      probelauf,
+      zeitraum: { von: date_from, bis: date_to },
+      anzahl: treffer.length,
+      nachKategorie: [...nachKategorie].map(([name, anzahl]) => ({ name, anzahl })),
+      serienBetroffen: serienIds.length,
+      serienEntfernt,
+      ausHallenplanung: treffer.filter(t => t.source === 'hallenplanung').length,
+      details: treffer.slice(0, MAX_DETAILS).map(t => ({
+        titel: t.title,
+        start: t.start_time,
+        kategorie: t.category_name,
+      })),
+    });
+  }
+);
 
 // ============ SERIES ============
 // Note: all series routes have two path segments (/series/...) except POST /series,

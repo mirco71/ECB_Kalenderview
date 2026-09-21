@@ -45,9 +45,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (currentUser.role === 'admin') {
     await loadUsers();
     await loadSyncTokens();
+    initBulkDelete();
   }
 
   initStats();
+  initPasswordModal();
 });
 
 /**
@@ -1081,6 +1083,160 @@ function resetUserForm() {
   document.getElementById('userFormTitle').textContent = 'Neuen Benutzer erstellen';
   document.getElementById('userSubmitBtn').textContent = 'Benutzer erstellen';
   document.getElementById('userCancelBtn').style.display = 'none';
+}
+
+// ============================================================
+//  EIGENES PASSWORT ÄNDERN (alle Rollen)
+// ============================================================
+
+function initPasswordModal() {
+  document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const aktuell = document.getElementById('pwCurrent').value;
+    const neu = document.getElementById('pwNew').value;
+
+    if (neu !== document.getElementById('pwRepeat').value) {
+      showToast('Die beiden neuen Passwörter stimmen nicht überein', 'error');
+      return;
+    }
+
+    try {
+      await API.changePassword(aktuell, neu);
+      showToast('Passwort geändert');
+      closePasswordModal();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Klick auf den Hintergrund schließt den Dialog
+  document.getElementById('passwordModal').addEventListener('click', (e) => {
+    if (e.target.id === 'passwordModal') closePasswordModal();
+  });
+}
+
+function openPasswordModal() {
+  document.getElementById('passwordForm').reset();
+  document.getElementById('passwordModal').style.display = '';
+  document.getElementById('pwCurrent').focus();
+}
+
+function closePasswordModal() {
+  document.getElementById('passwordModal').style.display = 'none';
+  // Eingegebene Passwörter nicht im DOM stehen lassen
+  document.getElementById('passwordForm').reset();
+}
+
+// ============================================================
+//  TERMINE IM ZEITRAUM LÖSCHEN (admin only)
+// ============================================================
+
+// Letzte Vorschau. Löschen ist nur mit gültiger Vorschau möglich; jede Änderung
+// an Zeitraum oder Auswahl setzt sie zurück, damit nie etwas anderes gelöscht
+// wird als das, was angezeigt wurde.
+let bulkVorschau = null;
+
+function initBulkDelete() {
+  // Alle Kategorien vorausgewählt — abwählen ist die bewusste Einschränkung
+  document.getElementById('bulkCategories').innerHTML = categories.map(c => `
+    <label class="stats-cat">
+      <input type="checkbox" value="${c.id}" checked>
+      <span class="color-preview" style="background:${escapeHtml(c.color_hex)}"></span>${escapeHtml(c.name)}
+    </label>
+  `).join('');
+
+  const form = document.getElementById('bulkDeleteForm');
+  form.addEventListener('input', bulkVorschauVerwerfen);
+  form.addEventListener('change', bulkVorschauVerwerfen);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await bulkVorschauHolen();
+  });
+}
+
+function bulkAuswahl() {
+  return {
+    date_from: document.getElementById('bulkFrom').value,
+    date_to: document.getElementById('bulkTo').value,
+    category_ids: Array.from(document.querySelectorAll('#bulkCategories input:checked'))
+      .map(cb => parseInt(cb.value)),
+  };
+}
+
+function bulkVorschauVerwerfen() {
+  bulkVorschau = null;
+  document.getElementById('bulkDeleteBtn').disabled = true;
+  document.getElementById('bulkPreview').style.display = 'none';
+}
+
+async function bulkVorschauHolen() {
+  const auswahl = bulkAuswahl();
+  if (auswahl.category_ids.length === 0) {
+    showToast('Bitte mindestens eine Kategorie auswählen', 'error');
+    return;
+  }
+
+  try {
+    const ergebnis = await API.bulkDeleteEvents(auswahl, true);
+    bulkVorschau = { auswahl, ergebnis };
+    zeigeBulkVorschau(ergebnis);
+    document.getElementById('bulkDeleteBtn').disabled = ergebnis.anzahl === 0;
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function zeigeBulkVorschau(e) {
+  const box = document.getElementById('bulkPreview');
+  box.style.display = '';
+
+  if (e.anzahl === 0) {
+    box.innerHTML = '<p>Im Zeitraum liegen keine Termine der gewählten Kategorien.</p>';
+    return;
+  }
+
+  const kategorien = e.nachKategorie
+    .map(k => `<li>${escapeHtml(k.name)}: ${k.anzahl}</li>`).join('');
+  const hinweise = [];
+  if (e.serienBetroffen) hinweise.push(`${e.serienBetroffen} Serie(n) betroffen`);
+  if (e.ausHallenplanung) hinweise.push(`${e.ausHallenplanung} Spiel(e) aus Hallenplanung`);
+  const einzeln = e.details
+    .map(d => `<li>${escapeHtml(formatDatetime(d.start))} · ${escapeHtml(d.titel)} <small>(${escapeHtml(d.kategorie)})</small></li>`)
+    .join('');
+  const rest = e.anzahl > e.details.length ? `<li>… und ${e.anzahl - e.details.length} weitere</li>` : '';
+
+  box.innerHTML = `
+    <p><strong>${e.anzahl} Termine</strong> würden gelöscht${hinweise.length ? ' — ' + escapeHtml(hinweise.join(', ')) : ''}.</p>
+    <ul>${kategorien}</ul>
+    <details><summary>Einzelne Termine anzeigen</summary><ul>${einzeln}${rest}</ul></details>
+  `;
+}
+
+async function bulkDeleteAusfuehren() {
+  if (!bulkVorschau) return;
+  const { auswahl, ergebnis } = bulkVorschau;
+
+  const folgen = [
+    'Das lässt sich nicht rückgängig machen. Vorher ein Backup der Datenbank ziehen.',
+    'Die Bridge entfernt die Termine beim nächsten Lauf auch aus den Google-Kalendern; aus den Kalender-Feeds verschwinden sie sofort.',
+  ];
+  if (ergebnis.ausHallenplanung) {
+    folgen.push(`${ergebnis.ausHallenplanung} Spiel(e) stammen aus Hallenplanung und erscheinen beim nächsten Veröffentlichen wieder.`);
+  }
+
+  if (!confirm(
+    `${ergebnis.anzahl} Termine von ${formatDatum(auswahl.date_from)} bis ${formatDatum(auswahl.date_to)} löschen?\n\n` +
+    folgen.map(f => '• ' + f).join('\n')
+  )) return;
+
+  try {
+    const res = await API.bulkDeleteEvents(auswahl, false);
+    showToast(`${res.anzahl} Termine gelöscht`);
+    bulkVorschauVerwerfen();
+    await loadEvents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 // ============================================================
