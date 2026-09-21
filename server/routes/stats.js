@@ -2,7 +2,8 @@ const express = require('express');
 const { query, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth } = require('../middleware/auth');
-const { TEAMS, teamsFromTitle } = require('../teams');
+const { TEAMS } = require('../teams');
+const { bewerteTrainings } = require('../trainingAusfall');
 
 const router = express.Router();
 
@@ -144,7 +145,7 @@ router.get(
     // und die Halle belegen — siehe Kommentar am Routen-Kopf.
     const events = db
       .prepare(
-        `SELECT e.title, e.start_time, e.end_time, e.category_id,
+        `SELECT e.title, e.start_time, e.end_time, e.category_id, e.external_uid,
                 c.name AS category_name, c.color_hex AS category_color,
                 c.group_by_title AS group_by_title
          FROM events e
@@ -153,6 +154,11 @@ router.get(
          ORDER BY e.start_time ASC`
       )
       .all(end, start);
+
+    // Trainings, die an Spieltagen entfallen: komplett entfallene belegen die
+    // Halle nicht und werden nicht abgerechnet; bei teilweise entfallenen zählt
+    // in der Team-Aufschlüsselung nur, wer tatsächlich trainiert.
+    const ausfall = bewerteTrainings(db, events);
 
     const gruppen = new Map();
     const teamGruppen = new Map();
@@ -164,12 +170,13 @@ router.get(
 
     for (const ev of events) {
       if (!categoryIds.includes(ev.category_id)) continue;
+      if (ausfall.entfaelltKomplett(ev)) continue;
 
       const dauer = (new Date(ev.end_time) - new Date(ev.start_time)) / 60000; // Minuten
       gezaehlt.push(ev);
 
       if (groupByTeam) {
-        const teams = teamsFromTitle(ev.title);
+        const teams = ausfall.verbleibendeTeams(ev);
         if (teams.length > 1) mehrfachZugeordnet++;
         for (const team of teams) {
           if (!teamGruppen.has(team)) {
@@ -241,7 +248,7 @@ router.get(
     const antwort = {
       erfolg: true,
       zeitraum: { start, end },
-      termineGesamt: events.length,
+      termineGesamt: events.filter(e => !ausfall.entfaelltKomplett(e)).length,
       gruppen: ergebnis,
       gesamt: {
         anzahl: gesamtAnzahl,

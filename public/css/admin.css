@@ -563,6 +563,20 @@ tr.series-row:hover { background: #f0f6ff; }
 
 tr.deviating td { background: #fff8e1; }
 
+/* Training entfällt wegen eines Spiels — ausgegraut, aber nicht verschwunden,
+   damit im Admin nachvollziehbar bleibt, warum es im Kalender fehlt. */
+tr.cancelled td { color: #999; background: #f7f7f7; }
+tr.cancelled td:first-child { text-decoration: line-through; }
+
+.cancelled-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #b3261e;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-block;
+}
+
 .deviating-badge {
   margin-left: 6px;
   font-size: 11px;

@@ -54,6 +54,26 @@ Token wird wie „nicht angemeldet" behandelt.
 | POST | `/api/events/bulk-delete[?dry_run=true]` | **Nur Admin.** Alle Termine der gewählten Kategorien löschen, die im Zeitraum beginnen. Details siehe unten |
 | GET | `/api/stats?start=ISO&end=ISO&category_ids=5,7,8[&group_by_team=1]` | Abrechnung: Anzahl + Gesamtdauer je Kategorie im Zeitraum, optional nach Titel aufgeschlüsselt (siehe `group_by_title` in [DATABASE.md](DATABASE.md)). Zählt **ausschließlich** Termine mit `in_hall = 1` — Auswärtsspiele belegen keine Eiszeit in Solingen und dürfen die Abrechnung nicht erhöhen. Response: `{ erfolg, zeitraum, termineGesamt, gruppen[], gesamt }`, mit `group_by_team=1` zusätzlich `teams[]` und `teamsHinweis` |
 
+### Training entfällt an Spieltagen
+
+Hat eine Mannschaft an einem lokalen Kalendertag ein Spiel (Heim- oder
+Auswärtsspiel, Uhrzeit egal), findet ihr Training an diesem Tag nicht statt.
+Berechnet wird das **beim Lesen** in `server/trainingAusfall.js`, gespeichert
+bleibt das Training — nach einer Spielverlegung taucht es von selbst wieder auf.
+
+- **Spiel** = Termin mit `external_uid` (aus Hallenplanung), **Training** = kein Spiel und „Training" im Titel, Mannschaften über `teamsFromTitle()`
+- Gemeinsames Training („U13/15 Training"): entfällt nur für die spielende Mannschaft; erst wenn alle spielen, entfällt es komplett
+- Untermannschaften werden nicht unterschieden: U11a und U11b trainieren nur gemeinsam, ein Spiel einer der beiden streicht das gemeinsame Training
+- Die Bridge liest die Team-Feeds und löscht im Google-Kalender, was dort fehlt: Ein entfallenes Training wird nicht übertragen bzw. beim nächsten Lauf entfernt
+
+| Stelle | Wirkung |
+|---|---|
+| `GET /api/events` (Hallenansicht) | komplett entfallene Trainings fehlen |
+| `GET /api/events?include_extern=1` (Admin-Liste) und Serienansicht | Training bleibt, mit `entfaelltWegenSpiel` (alle spielen) und `entfaelltFuer` (Liste der spielenden Mannschaften) |
+| `/feeds/halle.ics` | komplett entfallene Trainings fehlen |
+| `/feeds/<Team>.ics` | Training fehlt, wenn diese Mannschaft spielt — die Bridge überträgt das in die Google-Kalender |
+| `GET /api/stats` | komplett entfallene Trainings werden nicht abgerechnet; Team-Aufschlüsselung zählt nur, wer trainiert |
+
 ### Termine im Zeitraum löschen
 
 `POST /api/events/bulk-delete` mit `{ date_from, date_to, category_ids: [...] }`,

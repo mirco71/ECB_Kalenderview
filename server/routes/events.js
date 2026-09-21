@@ -11,6 +11,7 @@ const {
   generateSeriesDates,
   MAX_SERIES_EVENTS,
 } = require('../datetime');
+const { bewerteTrainings } = require('../trainingAusfall');
 
 const router = express.Router();
 
@@ -56,6 +57,17 @@ function darfKategorieBearbeiten(db, user, categoryId) {
 
 const KATEGORIE_VERBOTEN = 'Für diese Kategorie fehlt die Berechtigung';
 
+/**
+ * Kennzeichen für Trainings, die an Spieltagen (teilweise) entfallen.
+ * `entfaelltWegenSpiel` gilt nur, wenn alle beteiligten Mannschaften spielen;
+ * `entfaelltFuer` nennt die Mannschaften, für die es nicht stattfindet.
+ */
+function ausfallFelder(ausfall, row) {
+  const entfallen = ausfall.entfallenFuer(row);
+  if (entfallen.length === 0) return {};
+  return { entfaelltWegenSpiel: ausfall.entfaelltKomplett(row), entfaelltFuer: entfallen };
+}
+
 // GET /api/events?start=ISO&end=ISO[&include_extern=1]
 //
 // Standardmäßig nur Termine, die die Halle belegen (in_hall = 1) — das ist die
@@ -89,10 +101,19 @@ router.get(
       )
       .all(end, start);
 
+    // Trainings, die wegen Spielen aller beteiligten Mannschaften entfallen:
+    // In der Hallenansicht verschwinden sie (die Halle ist frei), die
+    // Admin-Liste (include_extern) behält sie mit Kennzeichen — sonst wüsste
+    // niemand, warum ein Serientermin im Kalender fehlt.
+    const ausfall = bewerteTrainings(db, events);
+    const termine = events
+      .filter(e => includeExtern || !ausfall.entfaelltKomplett(e))
+      .map(e => ({ ...mapEventToTermin(e), ...ausfallFelder(ausfall, e) }));
+
     res.json({
       erfolg: true,
       kalenderName: config.calendarName,
-      termine: events.map(mapEventToTermin),
+      termine,
       startStunde: config.startHour,
       endStunde: config.endHour,
     });
@@ -649,6 +670,7 @@ function loadSeries(db, seriesId) {
   const events = db
     .prepare(`${EVENT_BASE} WHERE e.series_id = ? ORDER BY e.start_time ASC`)
     .all(seriesId);
+  const ausfall = bewerteTrainings(db, events);
 
   return {
     serie: {
@@ -668,6 +690,7 @@ function loadSeries(db, seriesId) {
     },
     termine: events.map(row => ({
       ...mapEventToTermin(row),
+      ...ausfallFelder(ausfall, row),
       abweichend:
         toLocalTimeString(new Date(row.start_time)) !== series.time_from ||
         toLocalTimeString(new Date(row.end_time)) !== series.time_to,

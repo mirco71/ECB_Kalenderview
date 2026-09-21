@@ -1,7 +1,8 @@
 const express = require('express');
 const { getDb } = require('../database');
 const config = require('../config');
-const { TEAMS, teamsFromTitle, titleForTeam, stripSubTeam } = require('../teams');
+const { TEAMS, titleForTeam, stripSubTeam } = require('../teams');
+const { bewerteTrainings } = require('../trainingAusfall');
 
 const router = express.Router();
 
@@ -205,7 +206,11 @@ function sendCalendar(res, filename, body) {
 
 // GET /feeds/halle.ics — alles, was die Halle belegt
 router.get('/halle.ics', (req, res) => {
-  const rows = loadEvents().filter(e => e.in_hall === 1);
+  const alle = loadEvents();
+  // Ein Training, das wegen Spielen aller beteiligten Mannschaften entfällt,
+  // belegt die Halle nicht — siehe server/trainingAusfall.js.
+  const ausfall = bewerteTrainings(getDb(), alle);
+  const rows = alle.filter(e => e.in_hall === 1 && !ausfall.entfaelltKomplett(e));
   sendCalendar(
     res,
     'halle.ics',
@@ -260,7 +265,11 @@ router.get('/:name.ics', (req, res) => {
 
   // Auswärtsspiele gehören ausdrücklich dazu: Sie belegen die Halle nicht,
   // sind für die Eltern aber genauso Termine wie ein Heimspiel.
-  const rows = loadEvents().filter(e => teamsFromTitle(e.title).includes(team));
+  // Trainings zählen nur für die Mannschaften, die an dem Tag nicht spielen —
+  // die Bridge überträgt diesen Feed in die Google-Kalender der Eltern.
+  const alle = loadEvents();
+  const ausfall = bewerteTrainings(getDb(), alle);
+  const rows = alle.filter(e => ausfall.verbleibendeTeams(e).includes(team));
 
   const { zeilen, titelFuer } = fasseTeamTrainingsZusammen(rows, team);
 

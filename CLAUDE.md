@@ -54,6 +54,10 @@ npm run seed    # Ersten Admin-User anlegen (admin/admin123 per Default)
   akzeptiert sie, überall sonst lehnt `requireAuth` sie ab. Diese Beschränkung ist
   Absicht — wer sie aufweicht, gibt einem Token, das auf fremden Rechnern in einer
   Konfigurationsdatei liegt, Zugriff auf Benutzer und Kategorien.
+- **Trainingsausfall an Spieltagen wird beim Lesen berechnet** (`server/trainingAusfall.js`),
+  nicht gespeichert. Jede neue Stelle, die Termine für Halle, Feeds oder Abrechnung
+  liest, muss `bewerteTrainings()` anwenden — sonst taucht ein entfallenes Training
+  dort wieder auf. Heute: `GET /api/events`, `loadSeries`, beide Feed-Routen, `stats.js`.
 - **Nicht-öffentliche Termine haben zwei Austrittspfade**: `/api/events` (inkl. `/:id`)
   und die iCalendar-Feeds. Wer an der Sichtbarkeit arbeitet, muss `login_required`
   in beiden filtern — `server/routes/feeds.js` hat keine Anmeldung und ist der

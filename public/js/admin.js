@@ -244,6 +244,19 @@ async function loadEvents() {
 // Only numeric ids / the series UUID are interpolated into the inline handlers;
 // all user-controlled strings are looked up from `events` inside the handler,
 // never injected into HTML attributes.
+/**
+ * Hinweis für Trainings, die an Spieltagen entfallen. Der Server blendet sie in
+ * Kalender, Feeds und Abrechnung aus; ohne diesen Hinweis wäre im Admin nicht
+ * erkennbar, warum ein Termin dort fehlt.
+ */
+function ausfallHinweis(t) {
+  if (!t.entfaelltFuer || t.entfaelltFuer.length === 0) return '';
+  const text = t.entfaelltWegenSpiel
+    ? 'entfällt (Spiel)'
+    : `ohne ${t.entfaelltFuer.join(', ')} (Spiel)`;
+  return `<span class="cancelled-badge" title="An diesem Tag hat die Mannschaft ein Spiel">${escapeHtml(text)}</span>`;
+}
+
 function renderEventRow(t) {
   // Termine fremder Kategorien bleiben sichtbar, aber ohne Aktionen — der Server
   // würde sie mit 403 ablehnen.
@@ -253,8 +266,8 @@ function renderEventRow(t) {
     : '';
 
   return `
-    <tr>
-      <td>${escapeHtml(t.titel)}</td>
+    <tr class="${t.entfaelltWegenSpiel ? 'cancelled' : ''}">
+      <td>${escapeHtml(t.titel)}${ausfallHinweis(t)}</td>
       <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
       <td>${formatDatetime(new Date(t.start).toISOString())}</td>
       <td>${formatDatetime(new Date(t.ende).toISOString())}</td>
@@ -526,8 +539,8 @@ function renderSeriesModal() {
     const start = new Date(t.start);
     const end = new Date(t.ende);
     return `
-      <tr class="${t.abweichend ? 'deviating' : ''}">
-        <td>${escapeHtml(formatWeekdayDate(start))}${t.abweichend ? '<span class="deviating-badge">abweichend</span>' : ''}</td>
+      <tr class="${t.entfaelltWegenSpiel ? 'cancelled' : t.abweichend ? 'deviating' : ''}">
+        <td>${escapeHtml(formatWeekdayDate(start))}${t.abweichend ? '<span class="deviating-badge">abweichend</span>' : ''}${ausfallHinweis(t)}</td>
         <td><input type="time" value="${escapeHtml(toTimeValue(start))}" onchange="updateOccurrenceTime(${t.id}, this.value, null)"></td>
         <td><input type="time" value="${escapeHtml(toTimeValue(end))}" onchange="updateOccurrenceTime(${t.id}, null, this.value)"></td>
         <td class="actions">
