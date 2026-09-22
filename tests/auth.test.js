@@ -117,9 +117,22 @@ describe('Auth API', () => {
     expect(andererClient.status).toBe(200);
   });
 
+  // Successful logins and /me checks (every page load) must not fill the quota.
+  it('should not count successful auth requests against the limit', async () => {
+    const client = { 'CF-Connecting-IP': '198.51.100.77' };
+    const richtig = { username: 'admin', password: 'testpass123' };
+
+    for (let i = 0; i < 25; i++) {
+      const login = await req('POST', '/api/auth/login', richtig, null, client);
+      expect(login.status).toBe(200);
+      const me = await req('GET', '/api/auth/me', null, login.body.token, client);
+      expect(me.status).toBe(200);
+    }
+  });
+
   describe('eigenes Passwort ändern', () => {
-    // Eigener Limiter-Topf: Alle /api/auth-Aufrufe zählen gegen die Login-Sperre,
-    // ohne eigene Adresse teilten sich diese Tests das Kontingent mit den übrigen.
+    // Eigener Limiter-Topf: Fehlgeschlagene /api/auth-Aufrufe zählen gegen die
+    // Login-Sperre, ohne eigene Adresse teilten sich diese Tests das Kontingent.
     const client = { 'CF-Connecting-IP': '192.0.2.50' };
     let token;
 

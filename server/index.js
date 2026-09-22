@@ -55,9 +55,12 @@ app.use(express.json());
 // tunnel (local dev, tests).
 // Caveat: a client reaching the published container port directly bypasses
 // Cloudflare and can forge this header as well — only closing that port fixes it.
+// Only failed requests count: successful logins and the /me check on every page
+// load must not lock out legitimate users; guessing passwords still hits the limit.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // 20 attempts per window
+  max: 20, // 20 failed attempts per window
+  skipSuccessfulRequests: true,
   keyGenerator: req => req.get('CF-Connecting-IP') || req.ip,
   message: { error: 'Zu viele Anmeldeversuche. Bitte versuchen Sie es später erneut.' },
 });
