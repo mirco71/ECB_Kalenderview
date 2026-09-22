@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('eventFilterEnd').value = toLocalDate(nextSunday);
 
   initSeriesForm();
+  initSingleEventForm();
 
   // Load data
   await loadCategories();
@@ -87,6 +88,41 @@ function darfKategorieBearbeiten(categoryId) {
   if (!currentUser || currentUser.role !== 'eismeister') return true;
   const kategorie = categories.find(c => String(c.id) === String(categoryId));
   return !!kategorie && !!kategorie.eismeister_managed;
+}
+
+// Last start value the end field was aligned to — lets a changed start day move
+// the end by the same number of days (keeps multi-day events multi-day).
+let lastEventStart = '';
+
+/**
+ * Most single events last a few hours on one day, so the end follows the start
+ * day and only its time needs to be entered. An empty end is prefilled with the
+ * start plus one hour.
+ */
+function initSingleEventForm() {
+  const startInput = document.getElementById('eventStart');
+  const endInput = document.getElementById('eventEnd');
+
+  startInput.addEventListener('input', () => {
+    const start = startInput.value;
+    if (!start) return;
+
+    if (!endInput.value) {
+      const end = new Date(start);
+      end.setHours(end.getHours() + 1);
+      endInput.value = toLocalDatetime(end.toISOString());
+    } else if (lastEventStart && start.slice(0, 10) !== lastEventStart.slice(0, 10)) {
+      const [py, pm, pd] = lastEventStart.slice(0, 10).split('-').map(Number);
+      const [sy, sm, sd] = start.slice(0, 10).split('-').map(Number);
+      // Day difference via UTC dates, so a DST switch in between does not skew it.
+      const dayShift = Math.round((Date.UTC(sy, sm - 1, sd) - Date.UTC(py, pm - 1, pd)) / 86400000);
+
+      const [ey, em, ed] = endInput.value.slice(0, 10).split('-').map(Number);
+      const endDate = new Date(ey, em - 1, ed + dayShift);
+      endInput.value = `${toLocalDate(endDate)}${endInput.value.slice(10)}`;
+    }
+    lastEventStart = start;
+  });
 }
 
 function initSeriesForm() {
@@ -455,6 +491,7 @@ async function editEvent(id) {
     document.getElementById('eventCategory').value = t.farbe; // category_id as string
     document.getElementById('eventStart').value = toLocalDatetime(new Date(t.start).toISOString());
     document.getElementById('eventEnd').value = toLocalDatetime(new Date(t.ende).toISOString());
+    lastEventStart = document.getElementById('eventStart').value;
     document.getElementById('eventAllDay').checked = t.ganztaegig;
     document.getElementById('eventDescription').value = t.beschreibung;
     document.getElementById('eventLocation').value = t.ort;
@@ -485,6 +522,7 @@ async function deleteEvent(id) {
 
 function resetEventForm() {
   document.getElementById('eventForm').reset();
+  lastEventStart = '';
   document.getElementById('eventId').value = '';
   document.getElementById('eventModeSwitch').style.display = '';
   document.getElementById('eventFormTitle').textContent = 'Neuen Termin erstellen';
