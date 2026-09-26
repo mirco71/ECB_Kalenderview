@@ -2,6 +2,7 @@ const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth, optionalAuth, requireAdmin } = require('../middleware/auth');
+const { logAudit, diffFields, categoryView } = require('../audit');
 
 const router = express.Router();
 
@@ -61,6 +62,13 @@ router.post(
       );
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
+    logAudit(db, req, {
+      action: 'category.create',
+      entityType: 'category',
+      entityId: category.id,
+      summary: `Kategorie „${category.name}" angelegt`,
+      details: { daten: categoryView(category) },
+    });
     res.status(201).json(category);
   }
 );
@@ -126,6 +134,16 @@ router.put(
     );
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(parseInt(req.params.id));
+    const aenderungen = diffFields(categoryView(existing), categoryView(category));
+    if (aenderungen) {
+      logAudit(db, req, {
+        action: 'category.update',
+        entityType: 'category',
+        entityId: category.id,
+        summary: `Kategorie „${category.name}" geändert`,
+        details: { aenderungen },
+      });
+    }
     res.json(category);
   }
 );
@@ -138,7 +156,7 @@ router.delete('/:id', requireAuth, requireAdmin, param('id').isInt(), (req, res)
   }
 
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM categories WHERE id = ?').get(parseInt(req.params.id));
+  const existing = db.prepare('SELECT * FROM categories WHERE id = ?').get(parseInt(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: 'Kategorie nicht gefunden' });
   }
@@ -152,6 +170,13 @@ router.delete('/:id', requireAuth, requireAdmin, param('id').isInt(), (req, res)
   }
 
   db.prepare('DELETE FROM categories WHERE id = ?').run(parseInt(req.params.id));
+  logAudit(db, req, {
+    action: 'category.delete',
+    entityType: 'category',
+    entityId: existing.id,
+    summary: `Kategorie „${existing.name}" gelöscht`,
+    details: { daten: categoryView(existing) },
+  });
   res.json({ erfolg: true, message: 'Kategorie gelöscht' });
 });
 

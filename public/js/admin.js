@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadUsers();
     await loadSyncTokens();
     initBulkDelete();
+    initAuditLog();
   }
 
   initStats();
@@ -155,6 +156,12 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`tab-${tabName}`).classList.add('active');
+
+  // Always fresh on opening — the log changes with every action elsewhere.
+  if (tabName === 'audit') {
+    fillAuditUserFilter();
+    loadAuditLog();
+  }
 }
 
 // ============ LOGOUT ============
@@ -1375,4 +1382,160 @@ async function deleteSyncToken(id) {
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+// ============================================================
+//  ÄNDERUNGSPROTOKOLL (nur Admin)
+// ============================================================
+
+const AUDIT_PAGE_SIZE = 50;
+
+const AUDIT_AKTIONEN = {
+  'event.create': 'Termin angelegt',
+  'event.update': 'Termin geändert',
+  'event.delete': 'Termin gelöscht',
+  'events.bulk_delete': 'Massenlöschung',
+  'series.create': 'Serie angelegt',
+  'series.update': 'Serie geändert',
+  'series.delete': 'Serie gelöscht',
+  'category.create': 'Kategorie angelegt',
+  'category.update': 'Kategorie geändert',
+  'category.delete': 'Kategorie gelöscht',
+  'user.create': 'Benutzer angelegt',
+  'user.update': 'Benutzer geändert',
+  'user.delete': 'Benutzer gelöscht',
+  'auth.login': 'Anmeldung',
+  'auth.login_failed': 'Anmeldung fehlgeschlagen',
+  'auth.password_change': 'Passwort geändert',
+  'sync_token.create': 'Sync-Token erzeugt',
+  'sync_token.revoke': 'Sync-Token widerrufen',
+  'sync.calendar': 'Abgleich Spiele',
+  'sync.training': 'Abgleich Trainings',
+};
+
+let auditEintraege = [];
+let auditGesamt = 0;
+// Guards against a slow earlier response overwriting the result of a newer filter.
+let auditAnfrage = 0;
+let auditSuchTimer = null;
+
+function initAuditLog() {
+  ['auditArt', 'auditUser', 'auditFrom', 'auditTo'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => loadAuditLog()));
+  document.getElementById('auditQuery').addEventListener('input', () => {
+    clearTimeout(auditSuchTimer);
+    auditSuchTimer = setTimeout(() => loadAuditLog(), 300);
+  });
+  document.getElementById('auditFilterForm').addEventListener('submit', e => e.preventDefault());
+  document.getElementById('auditMoreBtn').addEventListener('click', () => loadAuditLog(true));
+
+  // One delegated handler: a click on a row toggles its detail row below.
+  document.getElementById('auditTableBody').addEventListener('click', (e) => {
+    const zeile = e.target.closest('tr.audit-row');
+    if (!zeile) return;
+    const detail = zeile.nextElementSibling;
+    if (detail && detail.classList.contains('audit-detail')) {
+      detail.style.display = detail.style.display === 'none' ? '' : 'none';
+    }
+  });
+}
+
+/** Benutzer-Filter aus der geladenen Benutzerliste; die Auswahl bleibt erhalten. */
+function fillAuditUserFilter() {
+  const select = document.getElementById('auditUser');
+  const gewaehlt = select.value;
+  select.innerHTML = '<option value="">Alle Benutzer</option>' + users
+    .map(u => `<option value="${u.id}">${escapeHtml(u.display_name)} (${escapeHtml(u.username)})</option>`)
+    .join('');
+  select.value = users.some(u => String(u.id) === gewaehlt) ? gewaehlt : '';
+}
+
+async function loadAuditLog(weitere = false) {
+  if (!currentUser || currentUser.role !== 'admin') return;
+
+  const nummer = ++auditAnfrage;
+  const offset = weitere ? auditEintraege.length : 0;
+
+  try {
+    const daten = await API.getAuditLog({
+      art: document.getElementById('auditArt').value,
+      user_id: document.getElementById('auditUser').value,
+      from: document.getElementById('auditFrom').value,
+      to: document.getElementById('auditTo').value,
+      q: document.getElementById('auditQuery').value.trim(),
+      limit: AUDIT_PAGE_SIZE,
+      offset,
+    });
+    if (nummer !== auditAnfrage) return;
+
+    auditEintraege = weitere ? auditEintraege.concat(daten.eintraege) : daten.eintraege;
+    auditGesamt = daten.gesamt;
+    renderAuditLog();
+  } catch (err) {
+    showToast('Protokoll laden fehlgeschlagen: ' + err.message, 'error');
+  }
+}
+
+function renderAuditLog() {
+  const tbody = document.getElementById('auditTableBody');
+  document.getElementById('auditCount').textContent =
+    auditGesamt === 0 ? '' : `${auditEintraege.length} von ${auditGesamt} Einträgen`;
+  document.getElementById('auditMoreBtn').style.display =
+    auditEintraege.length < auditGesamt ? '' : 'none';
+
+  if (auditEintraege.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">Keine Einträge</td></tr>';
+    return;
+  }
+
+  // Everything here stems from user input (titles, attempted user names) — escape all of it.
+  tbody.innerHTML = auditEintraege.map(e => `
+    <tr class="audit-row${e.aktion === 'auth.login_failed' ? ' audit-failed' : ''}">
+      <td class="audit-when">${formatDatetime(e.zeitpunkt)}</td>
+      <td>${escapeHtml(e.benutzer || '—')}</td>
+      <td class="audit-action">${escapeHtml(AUDIT_AKTIONEN[e.aktion] || e.aktion)}</td>
+      <td>${escapeHtml(e.zusammenfassung)}</td>
+    </tr>
+    <tr class="audit-detail" style="display:none">
+      <td colspan="4">${renderAuditDetails(e)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderAuditDetails(e) {
+  const d = e.details || {};
+  const leer = v => (v === '' || v == null ? '(leer)' : v);
+  const teile = [];
+
+  if (d.aenderungen) {
+    teile.push('<dl>' + Object.entries(d.aenderungen).map(([feld, [alt, neu]]) => `
+      <dt>${escapeHtml(feld)}</dt>
+      <dd><span class="audit-old">${escapeHtml(leer(alt))}</span> → <span class="audit-new">${escapeHtml(leer(neu))}</span></dd>
+    `).join('') + '</dl>');
+  }
+  if (d.daten) {
+    teile.push('<dl>' + Object.entries(d.daten).map(([feld, wert]) => `
+      <dt>${escapeHtml(feld)}</dt><dd>${escapeHtml(leer(wert))}</dd>
+    `).join('') + '</dl>');
+  }
+  if (d.liste && d.liste.length > 0) {
+    teile.push(auditListe(d.liste, d.weitere));
+  }
+  if (d.listen) {
+    Object.entries(d.listen)
+      .filter(([, eintraege]) => eintraege.length > 0)
+      .forEach(([name, eintraege]) => {
+        teile.push(`<h4>${escapeHtml(name)}</h4>${auditListe(eintraege)}`);
+      });
+  }
+  if (e.ip) {
+    teile.push(`<dl><dt>IP-Adresse</dt><dd>${escapeHtml(e.ip)}</dd></dl>`);
+  }
+
+  return teile.length > 0 ? teile.join('') : '<span style="color:#999">Keine weiteren Details</span>';
+}
+
+function auditListe(eintraege, weitere = 0) {
+  return '<ul>' + eintraege.map(t => `<li>${escapeHtml(t)}</li>`).join('') +
+    (weitere > 0 ? `<li>… und ${weitere} weitere</li>` : '') + '</ul>';
 }

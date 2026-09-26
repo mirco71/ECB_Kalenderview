@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const { toLocalDateString, toLocalTimeString } = require('./datetime');
+const { pruneAudit } = require('./audit');
 
 let db = null;
 let dbReady = null;
@@ -131,6 +132,9 @@ async function initDatabase() {
 
   // Seed categories
   seedCategories();
+
+  // Drop audit entries past the retention period
+  pruneAudit(db);
 
   return db;
 }
@@ -305,6 +309,25 @@ function migrate() {
     geaendert INTEGER NOT NULL DEFAULT 0,
     geloescht INTEGER NOT NULL DEFAULT 0
   )`);
+
+  // Änderungsprotokoll: wer hat wann was geändert (nur für Admins sichtbar).
+  // Wie sync_log ohne Fremdschlüssel — ein Eintrag muss das Löschen des
+  // Benutzers überdauern, deshalb steht der Name zusätzlich als Schnappschuss
+  // drin. Reine Neuanlage: bestehende Tabellen und Zeilen fasst das nicht an.
+  // Aufbewahrung 6 Monate, siehe pruneAudit() in audit.js.
+  db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id INTEGER DEFAULT NULL,
+    username TEXT DEFAULT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT DEFAULT NULL,
+    summary TEXT NOT NULL,
+    details TEXT DEFAULT NULL,
+    ip TEXT DEFAULT NULL
+  )`);
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)'); } catch(e) {}
 
   migrateEismeisterRolle();
   seedEismeisterKategorie();

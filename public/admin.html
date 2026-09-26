@@ -26,6 +26,7 @@
       <div class="admin-tab not-eismeister" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
       <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
       <div class="admin-tab admin-only" data-tab="synctokens" onclick="switchTab('synctokens')">🔑 Sync-Tokens</div>
+      <div class="admin-tab admin-only" data-tab="audit" onclick="switchTab('audit')">📜 Protokoll</div>
     </div>
 
     <!-- Content -->
@@ -396,6 +397,72 @@
             <tr><td colspan="6" style="text-align:center;color:#999">Lade...</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- ============ PROTOKOLL TAB ============ -->
+      <div class="tab-panel" id="tab-audit">
+        <div class="form-section">
+          <h3>Änderungsprotokoll</h3>
+          <p class="hint">
+            Wer hat wann was geändert. Einträge werden nach 6 Monaten automatisch gelöscht.
+            Anmeldungen sind in der Standardansicht ausgeblendet, über „Art" abrufbar.
+          </p>
+          <form id="auditFilterForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="auditArt">Art</label>
+                <select id="auditArt">
+                  <option value="aenderungen" selected>Alle Änderungen</option>
+                  <option value="termine">Termine &amp; Serien</option>
+                  <option value="kategorien">Kategorien</option>
+                  <option value="benutzer">Benutzer</option>
+                  <option value="sync">Abgleich &amp; Sync-Tokens</option>
+                  <option value="anmeldungen">Anmeldungen</option>
+                  <option value="fehlanmeldungen">Fehlgeschlagene Anmeldungen</option>
+                  <option value="alle">Alles</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="auditUser">Benutzer</label>
+                <select id="auditUser">
+                  <option value="">Alle Benutzer</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="auditFrom">Von</label>
+                <input type="date" id="auditFrom">
+              </div>
+              <div class="form-group">
+                <label for="auditTo">Bis</label>
+                <input type="date" id="auditTo">
+              </div>
+              <div class="form-group">
+                <label for="auditQuery">Suche</label>
+                <input type="search" id="auditQuery" maxlength="100" placeholder="z. B. Termintitel">
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <p class="hint" id="auditCount"></p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Zeitpunkt</th>
+              <th>Benutzer</th>
+              <th>Aktion</th>
+              <th>Beschreibung</th>
+            </tr>
+          </thead>
+          <tbody id="auditTableBody">
+            <tr><td colspan="4" style="text-align:center;color:#999">Lade...</td></tr>
+          </tbody>
+        </table>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" id="auditMoreBtn" style="display:none">Weitere laden</button>
+        </div>
       </div>
 
     </div>

@@ -6,6 +6,7 @@ const config = require('../config');
 const { getDb } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } = require('../passwords');
+const { logAudit } = require('../audit');
 
 const router = express.Router();
 
@@ -25,17 +26,37 @@ router.post(
     const { username, password } = req.body;
     const db = getDb();
 
+    // Failed logins are logged with the attempted name (never the password).
+    // Brute force cannot flood the log: the authLimiter answers with 429
+    // before the handler runs.
+    const fehlschlag = (grund) => {
+      logAudit(db, req, {
+        action: 'auth.login_failed',
+        entityType: 'auth',
+        actor: { id: user ? user.id : null, username: String(username).slice(0, 100) },
+        summary: `Anmeldung fehlgeschlagen: ${grund}`,
+      });
+      return res.status(401).json({ error: 'Ungültiger Benutzername oder Passwort' });
+    };
+
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user) {
-      return res.status(401).json({ error: 'Ungültiger Benutzername oder Passwort' });
+      return fehlschlag('Benutzer unbekannt');
     }
 
     // Async compare so the (deliberately slow) bcrypt hashing does not block the
     // event loop under repeated login attempts.
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Ungültiger Benutzername oder Passwort' });
+      return fehlschlag('Passwort falsch');
     }
+
+    logAudit(db, req, {
+      action: 'auth.login',
+      entityType: 'auth',
+      actor: user,
+      summary: 'Angemeldet',
+    });
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
@@ -103,6 +124,13 @@ router.put(
     const neuerHash = await bcrypt.hash(req.body.new_password, BCRYPT_ROUNDS);
     db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
       .run(neuerHash, user.id);
+
+    logAudit(db, req, {
+      action: 'auth.password_change',
+      entityType: 'auth',
+      entityId: user.id,
+      summary: 'Eigenes Passwort geändert',
+    });
 
     res.json({ erfolg: true, message: 'Passwort geändert' });
   }

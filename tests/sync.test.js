@@ -285,6 +285,26 @@ describe('Abgleich mit Hallenplanung', () => {
 
   // ---- Fehlerfälle ----
 
+  it('fasst einen Abgleich in einem Protokolleintrag zusammen', async () => {
+    const vorher = db.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n;
+
+    await sync([spiel()], { dryRun: true });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n).toBe(vorher);
+
+    const res = await sync([spiel(), spiel({ uid: 'hp-u17-2', date: '2026-10-10' })]);
+    expect(res.status).toBe(200);
+
+    const eintraege = db.prepare('SELECT * FROM audit_log WHERE id > ? ORDER BY id').all(vorher);
+    expect(eintraege).toHaveLength(1);
+    expect(eintraege[0].action).toBe('sync.calendar');
+    expect(eintraege[0].summary).toContain('2 angelegt');
+    expect(JSON.parse(eintraege[0].details).listen.Angelegt).toHaveLength(2);
+
+    // Ein Lauf ohne Änderung steht nur im sync_log.
+    await sync([spiel(), spiel({ uid: 'hp-u17-2', date: '2026-10-10' })]);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n).toBe(vorher + 1);
+  });
+
   it('lehnt ein fremdes Format ab', async () => {
     const res = await req('POST', '/api/sync/calendar',
       { ...payload([]), format: 'etwas-anderes' }, adminToken);

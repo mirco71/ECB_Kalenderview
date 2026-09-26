@@ -62,6 +62,9 @@ npm run seed    # Ersten Admin-User anlegen (admin/admin123 per Default)
   und die iCalendar-Feeds. Wer an der Sichtbarkeit arbeitet, muss `login_required`
   in beiden filtern — `server/routes/feeds.js` hat keine Anmeldung und ist der
   leichter zu übersehende Pfad.
+- **Änderungsprotokoll**: Jede schreibende Route ruft nach erfolgreicher Änderung
+  `logAudit()` aus `server/audit.js` auf (Muster: `events.js`). Passwörter, Hashes
+  und Token-Klartexte gehören nie in `details`. Details in [Docs/DATABASE.md](Docs/DATABASE.md).
 - **Zeitzone**: Serientermine werden in lokaler Zeit gerechnet (`server/datetime.js`),
   der Container ist auf `TZ=Europe/Berlin` festgenagelt. Wer Datums-/Zeitlogik
   anfasst: `toISOString()` liefert UTC und ist für „welcher Kalendertag ist das"

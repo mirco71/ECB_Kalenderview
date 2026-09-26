@@ -603,3 +603,19 @@ tr.cancelled td:first-child { text-decoration: line-through; }
     align-items: stretch;
   }
 }
+
+/* ============ ÄNDERUNGSPROTOKOLL ============ */
+tr.audit-row { cursor: pointer; }
+tr.audit-row td { vertical-align: top; }
+tr.audit-row.audit-failed { background: #fff4f4; }
+tr.audit-row.audit-failed:hover { background: #ffe9e9; }
+.audit-action { white-space: nowrap; font-size: 0.85em; color: #555; }
+.audit-when { white-space: nowrap; }
+tr.audit-detail td { background: #fafbfc; font-size: 0.9em; }
+.audit-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.audit-detail dt { font-weight: 600; color: #555; }
+.audit-detail dd { margin: 0; word-break: break-word; }
+.audit-detail .audit-old { color: #b3261e; text-decoration: line-through; }
+.audit-detail .audit-new { color: #1e7b34; }
+.audit-detail ul { margin: 4px 0 8px 18px; padding: 0; }
+.audit-detail h4 { margin: 8px 0 2px; font-size: 1em; }

@@ -12,6 +12,7 @@ const {
   MAX_SERIES_EVENTS,
 } = require('../datetime');
 const { bewerteTrainings } = require('../trainingAusfall');
+const { logAudit, diffFields, formatWhen, formatDate, eventView, seriesView } = require('../audit');
 
 const router = express.Router();
 
@@ -193,6 +194,13 @@ router.post(
       );
 
     const event = db.prepare(EVENT_SELECT).get(result.lastInsertRowid);
+    logAudit(db, req, {
+      action: 'event.create',
+      entityType: 'event',
+      entityId: event.id,
+      summary: `Termin „${event.title}" am ${formatWhen(event.start_time)} angelegt`,
+      details: { daten: eventView(db, event) },
+    });
     res.status(201).json(mapEventToTermin(event));
   }
 );
@@ -268,6 +276,17 @@ router.put(
       parseInt(req.params.id)
     );
 
+    const aenderungen = diffFields(eventView(db, existing), eventView(db, updates));
+    if (aenderungen) {
+      logAudit(db, req, {
+        action: 'event.update',
+        entityType: 'event',
+        entityId: existing.id,
+        summary: `Termin „${updates.title}" am ${formatWhen(updates.start_time)} geändert`,
+        details: { aenderungen },
+      });
+    }
+
     const event = db.prepare(EVENT_SELECT).get(parseInt(req.params.id));
     res.json(mapEventToTermin(event));
   }
@@ -281,7 +300,7 @@ router.delete('/:id', requireAuth, param('id').isInt(), (req, res) => {
   }
 
   const db = getDb();
-  const existing = db.prepare('SELECT id, category_id FROM events WHERE id = ?').get(parseInt(req.params.id));
+  const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(parseInt(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: 'Termin nicht gefunden' });
   }
@@ -291,6 +310,14 @@ router.delete('/:id', requireAuth, param('id').isInt(), (req, res) => {
   }
 
   db.prepare('DELETE FROM events WHERE id = ?').run(parseInt(req.params.id));
+  logAudit(db, req, {
+    action: 'event.delete',
+    entityType: 'event',
+    entityId: existing.id,
+    summary: `Termin „${existing.title}" am ${formatWhen(existing.start_time)} gelöscht` +
+      (existing.series_id ? ' (aus Serie)' : ''),
+    details: { daten: eventView(db, existing) },
+  });
   res.json({ erfolg: true, message: 'Termin gelöscht' });
 });
 
@@ -380,6 +407,21 @@ router.post(
           )
           .run(...serienIds).changes;
       }
+
+      logAudit(db, req, {
+        action: 'events.bulk_delete',
+        entityType: 'event',
+        summary: `${treffer.length} Termine vom ${formatDate(date_from)} bis ${formatDate(date_to)} gelöscht`,
+        details: {
+          daten: {
+            Zeitraum: `${formatDate(date_from)}–${formatDate(date_to)}`,
+            Kategorien: [...nachKategorie].map(([name, anzahl]) => `${name} (${anzahl})`).join(', '),
+            'Serien entfernt': serienEntfernt,
+          },
+          liste: treffer.slice(0, MAX_DETAILS).map(t => `${formatWhen(t.start_time)} ${t.title}`),
+          weitere: Math.max(0, treffer.length - MAX_DETAILS),
+        },
+      });
     }
 
     res.json({
@@ -484,6 +526,15 @@ router.post(
         description || '', location || '', seriesId, req.user.id
       );
     }
+
+    const neueSerie = db.prepare('SELECT * FROM series WHERE id = ?').get(seriesId);
+    logAudit(db, req, {
+      action: 'series.create',
+      entityType: 'series',
+      entityId: seriesId,
+      summary: `Serie „${title}" mit ${occurrences.length} Terminen angelegt`,
+      details: { daten: { ...seriesView(db, neueSerie), Termine: occurrences.length } },
+    });
 
     res.status(201).json({
       erfolg: true,
@@ -625,6 +676,21 @@ router.put(
       }
     }
 
+    const aenderungen = diffFields(
+      seriesView(db, existing),
+      seriesView(db, { ...updates, date_from: neuesDatumVon, date_to: neuesDatumBis })
+    );
+    if (aenderungen) {
+      const anzahl = db.prepare('SELECT COUNT(*) as count FROM events WHERE series_id = ?').get(seriesId).count;
+      logAudit(db, req, {
+        action: 'series.update',
+        entityType: 'series',
+        entityId: seriesId,
+        summary: `Serie „${updates.title}" geändert (${anzahl} Termine)`,
+        details: { aenderungen },
+      });
+    }
+
     res.json({ erfolg: true, ...loadSeries(db, seriesId) });
   }
 );
@@ -635,7 +701,7 @@ router.delete('/series/:seriesId', requireAuth, (req, res) => {
   const seriesId = req.params.seriesId;
 
   const count = db.prepare('SELECT COUNT(*) as count FROM events WHERE series_id = ?').get(seriesId);
-  const series = db.prepare('SELECT id, category_id FROM series WHERE id = ?').get(seriesId);
+  const series = db.prepare('SELECT * FROM series WHERE id = ?').get(seriesId);
   if ((!count || count.count === 0) && !series) {
     return res.status(404).json({ error: 'Terminserie nicht gefunden' });
   }
@@ -644,8 +710,22 @@ router.delete('/series/:seriesId', requireAuth, (req, res) => {
     return res.status(403).json({ error: KATEGORIE_VERBOTEN });
   }
 
+  // Without a series record (orphaned series_id) the title comes from one of its events.
+  const titel = series
+    ? series.title
+    : db.prepare('SELECT title FROM events WHERE series_id = ?').get(seriesId).title;
+
   db.prepare('DELETE FROM events WHERE series_id = ?').run(seriesId);
   db.prepare('DELETE FROM series WHERE id = ?').run(seriesId);
+  logAudit(db, req, {
+    action: 'series.delete',
+    entityType: 'series',
+    entityId: seriesId,
+    summary: `Serie „${titel}" mit ${count.count} Terminen gelöscht`,
+    details: {
+      daten: { ...(series ? seriesView(db, series) : { Titel: titel }), Termine: count.count },
+    },
+  });
   res.json({ erfolg: true, message: `${count.count} Termine der Serie gelöscht` });
 });
 

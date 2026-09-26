@@ -297,6 +297,31 @@ angelegt.
 |---|---|---|
 | GET/POST/PUT/DELETE | `/api/users` bzw. `/api/users/:id` | Nutzerverwaltung. Self-Delete blockiert. Passwort optional bei PUT (nur bei Angabe neu gehasht). |
 | POST/PUT/DELETE | `/api/categories` bzw. `/api/categories/:id` | Kategorien anlegen/ändern/löschen. DELETE schlägt fehl (409), wenn noch Termine die Kategorie referenzieren. |
+| GET | `/api/audit` | Änderungsprotokoll, neueste zuerst (siehe unten) |
+
+### Änderungsprotokoll
+
+`GET /api/audit?art=&user_id=&from=&to=&q=&limit=&offset=`, alle Parameter optional:
+
+| Parameter | Bedeutung |
+|---|---|
+| `art` | `aenderungen` (**Default**, alles außer Anmeldungen), `termine`, `kategorien`, `benutzer`, `sync`, `anmeldungen`, `fehlanmeldungen`, `alle` |
+| `user_id` | nur Einträge dieses Benutzers |
+| `from` / `to` | `YYYY-MM-DD`, lokale Kalendertage, beide inklusive |
+| `q` | Freitext in Beschreibung und Benutzername, `%`/`_` wörtlich, max. 100 Zeichen |
+| `limit` / `offset` | Paging, `limit` 1–200, Default 50 |
+
+**Antwort**: `{ erfolg, gesamt, eintraege: [{ id, zeitpunkt (ISO, UTC), benutzerId, benutzer, aktion, bereich, objektId, zusammenfassung, details, ip }] }`.
+`gesamt` zählt die gefilterte Menge. `details` enthält je nach Aktion `aenderungen`
+(`{ Feld: [alt, neu] }`), `daten` (Schnappschuss), `liste`/`weitere` (Massenlöschung)
+oder `listen` (Abgleich) — bereits lesbar aufbereitet (deutsche Feldnamen, lokale Zeit).
+
+Geschrieben wird per `logAudit()` aus `server/audit.js` von jeder schreibenden
+Route nach erfolgreicher Änderung — nicht bei Fehlern, 403/404 oder Probeläufen,
+und nicht bei `PUT`, die nichts ändern. Ein Abgleich aus Hallenplanung ist **ein**
+Sammeleintrag (Läufe ohne Änderung nur im `sync_log`). Anmeldungen werden
+protokolliert, fehlgeschlagene mit versuchtem Namen und IP; vom `authLimiter`
+abgewiesene Versuche (429) erreichen den Handler nicht und fluten das Log daher nicht.
 
 ## Validierungsmuster
 

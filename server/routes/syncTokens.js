@@ -3,6 +3,7 @@ const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { erzeugeToken } = require('../synctoken');
+const { logAudit } = require('../audit');
 
 const router = express.Router();
 
@@ -41,6 +42,15 @@ router.post(
       .prepare('SELECT id, label, prefix, created_at, last_used_at FROM sync_tokens WHERE id = ?')
       .get(id);
 
+    // Nur Bezeichnung und Präfix — der Klartext darf nirgends gespeichert werden.
+    logAudit(getDb(), req, {
+      action: 'sync_token.create',
+      entityType: 'sync_token',
+      entityId: zeile.id,
+      summary: `Sync-Token „${zeile.label}" erzeugt`,
+      details: { daten: { Bezeichnung: zeile.label, 'Präfix': zeile.prefix } },
+    });
+
     res.status(201).json({ ...zeile, token });
   }
 );
@@ -54,12 +64,21 @@ router.delete('/:id', param('id').isInt(), (req, res) => {
   }
 
   const db = getDb();
-  const vorhanden = db.prepare('SELECT id FROM sync_tokens WHERE id = ?').get(parseInt(req.params.id));
+  const vorhanden = db
+    .prepare('SELECT id, label, prefix FROM sync_tokens WHERE id = ?')
+    .get(parseInt(req.params.id));
   if (!vorhanden) {
     return res.status(404).json({ error: 'Token nicht gefunden' });
   }
 
   db.prepare('DELETE FROM sync_tokens WHERE id = ?').run(parseInt(req.params.id));
+  logAudit(db, req, {
+    action: 'sync_token.revoke',
+    entityType: 'sync_token',
+    entityId: vorhanden.id,
+    summary: `Sync-Token „${vorhanden.label}" widerrufen`,
+    details: { daten: { Bezeichnung: vorhanden.label, 'Präfix': vorhanden.prefix } },
+  });
   res.json({ erfolg: true, message: 'Token widerrufen' });
 });
 

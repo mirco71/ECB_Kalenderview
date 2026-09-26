@@ -185,6 +185,29 @@ in der Vorschau von Hallenplanung.
 | user_id | INTEGER | |
 | angelegt / geaendert / geloescht | INTEGER | |
 
+### `audit_log`
+
+Änderungsprotokoll: wer hat wann was geändert, dazu Anmeldungen. Lesbar über
+`GET /api/audit` (nur Admin), geschrieben über `logAudit()` in `server/audit.js`.
+
+| Spalte | Typ | Hinweise |
+|---|---|---|
+| id | INTEGER PK | |
+| created_at | TEXT | `datetime('now')`, also UTC; Index `idx_audit_created` |
+| user_id / username | INTEGER / TEXT | **ohne Fremdschlüssel**, Name als Schnappschuss — wie `sync_log` soll ein Eintrag das Löschen des Benutzers überdauern. Bei Fehl-Login der versuchte Name |
+| action | TEXT NOT NULL | z. B. `event.update`, `series.delete`, `auth.login_failed`, `sync.calendar` |
+| entity_type | TEXT NOT NULL | `event`, `series`, `category`, `user`, `sync_token`, `sync`, `auth` |
+| entity_id | TEXT | ID des Objekts (Serien haben UUIDs, deshalb TEXT) |
+| summary | TEXT NOT NULL | deutscher Einzeiler |
+| details | TEXT | JSON, lesbar aufbereitet (deutsche Feldnamen, lokale Zeit, Kategorienamen statt IDs) |
+| ip | TEXT | `CF-Connecting-IP`, sonst `req.ip` |
+
+**Nie** in `details`: Passwörter, Passwort-Hashes, Token-Klartexte (Tests prüfen das).
+
+**Aufbewahrung 6 Monate**: `pruneAudit()` löscht ältere Einträge beim Start und
+danach höchstens einmal täglich aus `logAudit()` heraus — ohne eigenen Timer.
+Das hält die Datei klein, die sql.js nach jedem Schreibvorgang komplett neu schreibt.
+
 ## Rollen-Migration: Tabellen-Neuaufbau
 
 SQLite kann eine `CHECK`-Constraint nicht per `ALTER TABLE` ändern, und

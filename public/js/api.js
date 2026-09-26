@@ -163,6 +163,17 @@ const API = {
     return this.request('DELETE', `/api/sync-tokens/${id}`);
   },
 
+  // ============ AUDIT LOG (admin) ============
+
+  // params: { art, user_id, from, to, q, limit, offset } — leere Werte entfallen.
+  async getAuditLog(params) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== '' && v != null) query.set(k, v);
+    });
+    return this.request('GET', `/api/audit?${query}`);
+  },
+
   // ============ CONFIG ============
 
   async getConfig() {

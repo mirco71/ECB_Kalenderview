@@ -9,6 +9,7 @@ const {
   generateSeriesDates,
   MAX_SERIES_EVENTS,
 } = require('../datetime');
+const { logAudit, formatWhen, formatDate } = require('../audit');
 
 const router = express.Router();
 
@@ -119,6 +120,24 @@ function hatSichGeaendert(vorhanden, gewuenscht) {
 
 function kurz(zeile) {
   return { titel: zeile.title, start: zeile.start_time };
+}
+
+/** Eine Zeile je Termin für das Änderungsprotokoll: "03.10.2026 18:00 Titel". */
+function protokollListe(zeilen) {
+  return zeilen.slice(0, MAX_DETAILS).map(z => `${formatWhen(z.start_time)} ${z.title}`);
+}
+
+/**
+ * Ein ganzer Abgleich ist ein Sammeleintrag im Änderungsprotokoll, nicht ein
+ * Eintrag je Termin. Läufe ohne Änderung stehen nur im sync_log.
+ */
+function protokolliereAbgleich(db, req, action, summary, details) {
+  logAudit(db, req, {
+    action,
+    entityType: 'sync',
+    summary: req.syncToken ? `${summary} (Token „${req.syncToken.label}")` : summary,
+    details,
+  });
 }
 
 // POST /api/sync/calendar[?dry_run=true]
@@ -270,6 +289,25 @@ router.post(
         geaendert: zuAendern.length,
         geloescht: zuLoeschen.length,
       });
+
+      if (anzulegen.length + zuAendern.length + zuLoeschen.length > 0) {
+        protokolliereAbgleich(db, req, 'sync.calendar',
+          `Abgleich Spiele aus Hallenplanung: ${anzulegen.length} angelegt, ` +
+          `${zuAendern.length} geändert, ${zuLoeschen.length} gelöscht`,
+          {
+            daten: {
+              Zeitraum: `${formatDate(season.date_from)}–${formatDate(season.date_to)}`,
+              Angelegt: anzulegen.length,
+              'Geändert': zuAendern.length,
+              'Gelöscht': zuLoeschen.length,
+            },
+            listen: {
+              Angelegt: protokollListe(anzulegen),
+              'Geändert': protokollListe(zuAendern),
+              'Gelöscht': protokollListe(zuLoeschen),
+            },
+          });
+      }
     }
 
     res.json({
@@ -414,6 +452,17 @@ router.post(
         geaendert: 0,
         geloescht: 0,
       });
+
+      if (geplant.length > 0) {
+        const anzahl = geplant.reduce((n, s) => n + s.termine.length, 0);
+        protokolliereAbgleich(db, req, 'sync.training',
+          `Trainings aus Hallenplanung übertragen: ${geplant.length} Serien, ${anzahl} Termine`,
+          {
+            listen: {
+              Serien: geplant.map(s => `${s.titel} (${s.termine.length} Termine)`),
+            },
+          });
+      }
     }
 
     res.json({

@@ -4,6 +4,7 @@ const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } = require('../passwords');
+const { logAudit, diffFields, userView } = require('../audit');
 
 const router = express.Router();
 
@@ -56,6 +57,14 @@ router.post(
     const user = db
       .prepare('SELECT id, username, role, display_name, created_at FROM users WHERE id = ?')
       .get(result.lastInsertRowid);
+
+    logAudit(db, req, {
+      action: 'user.create',
+      entityType: 'user',
+      entityId: user.id,
+      summary: `Benutzer „${user.username}" (${user.role}) angelegt`,
+      details: { daten: userView(user) },
+    });
 
     res.status(201).json(user);
   }
@@ -116,6 +125,19 @@ router.put(
       .prepare('SELECT id, username, role, display_name, created_at, updated_at FROM users WHERE id = ?')
       .get(parseInt(req.params.id));
 
+    // Nur die Tatsache einer Passwortänderung, nie Klartext oder Hash.
+    const aenderungen = diffFields(userView(existing), userView(user)) || {};
+    if (req.body.password) aenderungen.Passwort = ['', 'neu gesetzt'];
+    if (Object.keys(aenderungen).length > 0) {
+      logAudit(db, req, {
+        action: 'user.update',
+        entityType: 'user',
+        entityId: user.id,
+        summary: `Benutzer „${user.username}" geändert`,
+        details: { aenderungen },
+      });
+    }
+
     res.json(user);
   }
 );
@@ -133,12 +155,21 @@ router.delete('/:id', param('id').isInt(), (req, res) => {
   }
 
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(parseInt(req.params.id));
+  const existing = db
+    .prepare('SELECT id, username, role, display_name FROM users WHERE id = ?')
+    .get(parseInt(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: 'Benutzer nicht gefunden' });
   }
 
   db.prepare('DELETE FROM users WHERE id = ?').run(parseInt(req.params.id));
+  logAudit(db, req, {
+    action: 'user.delete',
+    entityType: 'user',
+    entityId: existing.id,
+    summary: `Benutzer „${existing.username}" gelöscht`,
+    details: { daten: userView(existing) },
+  });
   res.json({ erfolg: true, message: 'Benutzer gelöscht' });
 });
 
