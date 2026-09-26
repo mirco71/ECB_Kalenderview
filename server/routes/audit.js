@@ -12,8 +12,8 @@ router.use(requireAuth, requireAdmin);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Filter "Art". Der Default `aenderungen` blendet Anmeldungen aus, damit
- * fehlgeschlagene Logins die eigentlichen Änderungen nicht verdrängen.
+ * Filter "Art". Default ist `alle`; `aenderungen` blendet Anmeldungen aus,
+ * wenn fehlgeschlagene Logins die eigentlichen Änderungen verdrängen.
  */
 const ARTEN = {
   aenderungen: "entity_type != 'auth'",
@@ -49,7 +49,7 @@ router.get(
       return res.status(400).json({ error: errors.array()[0].msg });
     }
 
-    const art = ARTEN[req.query.art || 'aenderungen'];
+    const art = ARTEN[req.query.art || 'alle'];
     const bedingungen = [art];
     const parameter = [];
 

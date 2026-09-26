@@ -405,21 +405,21 @@
           <h3>Änderungsprotokoll</h3>
           <p class="hint">
             Wer hat wann was geändert. Einträge werden nach 6 Monaten automatisch gelöscht.
-            Anmeldungen sind in der Standardansicht ausgeblendet, über „Art" abrufbar.
+            Über „Art" lassen sich z. B. Anmeldungen ausblenden oder nur Fehlversuche anzeigen.
           </p>
           <form id="auditFilterForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="auditArt">Art</label>
                 <select id="auditArt">
-                  <option value="aenderungen" selected>Alle Änderungen</option>
+                  <option value="alle" selected>Alles</option>
+                  <option value="aenderungen">Alle Änderungen (ohne Anmeldungen)</option>
                   <option value="termine">Termine &amp; Serien</option>
                   <option value="kategorien">Kategorien</option>
                   <option value="benutzer">Benutzer</option>
                   <option value="sync">Abgleich &amp; Sync-Tokens</option>
                   <option value="anmeldungen">Anmeldungen</option>
                   <option value="fehlanmeldungen">Fehlgeschlagene Anmeldungen</option>
-                  <option value="alle">Alles</option>
                 </select>
               </div>
               <div class="form-group">

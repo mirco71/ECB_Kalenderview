@@ -305,7 +305,7 @@ angelegt.
 
 | Parameter | Bedeutung |
 |---|---|
-| `art` | `aenderungen` (**Default**, alles außer Anmeldungen), `termine`, `kategorien`, `benutzer`, `sync`, `anmeldungen`, `fehlanmeldungen`, `alle` |
+| `art` | `alle` (**Default**), `aenderungen` (alles außer Anmeldungen), `termine`, `kategorien`, `benutzer`, `sync`, `anmeldungen`, `fehlanmeldungen` |
 | `user_id` | nur Einträge dieses Benutzers |
 | `from` / `to` | `YYYY-MM-DD`, lokale Kalendertage, beide inklusive |
 | `q` | Freitext in Beschreibung und Benutzername, `%`/`_` wörtlich, max. 100 Zeichen |

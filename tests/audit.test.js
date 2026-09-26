@@ -237,11 +237,17 @@ describe('Änderungsprotokoll', () => {
       expect(erfolgreich.some(e => e.aktion === 'auth.login' && e.benutzer === 'editor')).toBe(true);
     });
 
-    it('blendet Anmeldungen in der Standardansicht aus', async () => {
+    it('zeigt in der Standardansicht alles, auch Anmeldungen', async () => {
       const res = await req('GET', '/api/audit', null, adminToken);
       expect(res.status).toBe(200);
-      expect(res.body.eintraege.length).toBeGreaterThan(0);
-      expect(res.body.eintraege.some(e => e.bereich === 'auth')).toBe(false);
+      expect(res.body.gesamt).toBe((await protokoll('art=alle')).gesamt);
+      expect(res.body.eintraege.some(e => e.aktion === 'auth.login_failed')).toBe(true);
+    });
+
+    it('blendet Anmeldungen mit art=aenderungen aus', async () => {
+      const { eintraege } = await protokoll('art=aenderungen');
+      expect(eintraege.length).toBeGreaterThan(0);
+      expect(eintraege.some(e => e.bereich === 'auth')).toBe(false);
     });
   });
 
