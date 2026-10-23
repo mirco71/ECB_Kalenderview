@@ -18,9 +18,10 @@ app.set('trust proxy', 1);
 // Security headers.
 // - No 'unsafe-inline' in script-src: inline <script> blocks are blocked, which
 //   removes the main stored-XSS execution vector. All page scripts are external.
-// - script-src-attr keeps 'unsafe-inline' for the static onclick= handlers in the
-//   HTML (to be removed with the inline-handler cleanup); combined with strict
-//   output-escaping there is no HTML-injection path to abuse them.
+// - script-src-attr is 'none': inline event-handler attributes (onclick= etc.) are
+//   blocked as well. The frontend registers all handlers via addEventListener
+//   (data-action attributes), so injected markup cannot execute script through
+//   an attribute either.
 // - style-src is 'self' only: no <style> blocks, all stylesheets are files under
 //   /css. style-src-attr keeps 'unsafe-inline' because the calendar positions
 //   events via inline style="" attributes (values are computed client-side; the
@@ -38,7 +39,7 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        scriptSrcAttr: ["'unsafe-inline'"],
+        scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'"],
         styleSrcAttr: ["'unsafe-inline'"],
         fontSrc: ["'self'"],

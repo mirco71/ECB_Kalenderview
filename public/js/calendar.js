@@ -449,8 +449,8 @@ function zeigeMonat(result, rasterStart, monat) {
     if (istHeute) klassen.push('today');
     if (istGewaehlt) klassen.push('selected');
 
-    // Nur das ISO-Datum landet im Handler — keine benutzergesteuerten Strings.
-    html += `<div class="${klassen.join(' ')}" onclick="waehleTag('${toLocalDate(tag)}')">
+    // Nur das ISO-Datum landet im data-Attribut — keine benutzergesteuerten Strings.
+    html += `<div class="${klassen.join(' ')}" data-action="select-day" data-date="${toLocalDate(tag)}">
       <div class="month-daynum">${tag.getDate()}</div>
       <div class="month-chips">`;
 
@@ -577,12 +577,12 @@ function erstelleLegende(termine) {
 
 /**
  * Lösch-Button am Termin — nur für angemeldete Benutzer. Es wird ausschließlich
- * die numerische ID in den Handler interpoliert; Titel und Serien-ID werden im
+ * die numerische ID als data-id geschrieben; Titel und Serien-ID werden im
  * Handler aus `termineImBlick` nachgeschlagen, nie in ein HTML-Attribut geschrieben.
  */
 function loeschButton(termin) {
   if (!darfBearbeiten) return '';
-  return `<button class="event-delete" title="Termin löschen" onclick="loescheTermin(${termin.id})">🗑️</button>`;
+  return `<button class="event-delete" title="Termin löschen" data-action="delete-event" data-id="${termin.id}">🗑️</button>`;
 }
 
 async function loescheTermin(id) {
@@ -632,7 +632,39 @@ function escapeHtml(text) {
 
 // ============ INIT ============
 
+/**
+ * Registriert alle Handler einmalig (die CSP verbietet Inline-Handler).
+ * #kalenderContent wird per innerHTML neu gerendert, bleibt aber selbst stehen —
+ * deshalb ein einziger delegierter Listener dort statt Listener pro Render.
+ */
+function initEventListeners() {
+  const nav = {
+    'set-view': (el) => setzeAnsicht(el.dataset.view),
+    'prev-month': () => vorherigerMonat(),
+    'prev': () => zurueck(),
+    'next': () => vor(),
+    'next-month': () => naechsterMonat(),
+    'today': () => heuteAnzeigen(),
+  };
+  document.querySelectorAll('[data-action]').forEach(el => {
+    const handler = nav[el.dataset.action];
+    if (handler) el.addEventListener('click', () => handler(el));
+  });
+  document.getElementById('datumSprung')
+    .addEventListener('change', (e) => springeZuDatum(e.target.value));
+
+  const inhalt = document.getElementById('kalenderContent');
+  inhalt.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || !inhalt.contains(el)) return;
+    if (el.dataset.action === 'select-day') waehleTag(el.dataset.date);
+    else if (el.dataset.action === 'delete-event') loescheTermin(Number(el.dataset.id));
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  initEventListeners();
+
   // Token gegen die API prüfen statt nur auf sein Vorhandensein zu vertrauen —
   // ein abgelaufener Token würde sonst Buttons zeigen, die nur 401 liefern.
   if (API.isLoggedIn()) {
