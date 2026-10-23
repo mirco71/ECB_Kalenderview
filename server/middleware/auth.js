@@ -66,11 +66,20 @@ function signSessionToken(user) {
 
 /**
  * CSRF guard for cookie sessions: a state-changing request must come from the
- * own origin. SameSite=Strict already covers browsers; this is the second layer.
+ * own origin. SameSite=Strict is the first layer; this is the second one.
+ * Only the host is compared, not the protocol: behind Cloudflare tunnel and
+ * proxies TLS is terminated upstream, so req.protocol is not reliable. An
+ * invalid Origin (including "null") counts as foreign.
  */
 function isSameOrigin(req) {
   const origin = req.get('origin');
-  if (origin) return origin === `${req.protocol}://${req.get('host')}`;
+  if (origin) {
+    try {
+      return new URL(origin).host === req.get('host');
+    } catch {
+      return false;
+    }
+  }
   return req.get('sec-fetch-site') === 'same-origin';
 }
 

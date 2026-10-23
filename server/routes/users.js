@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, setSessionCookie, signSessionToken } = require('../middleware/auth');
 const { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } = require('../passwords');
 const { logAudit, diffFields, userView } = require('../audit');
 
@@ -111,7 +111,9 @@ router.put(
     const params = [updates.username, updates.role, updates.display_name];
 
     if (req.body.password) {
-      passwordSql = ', password_hash = ?';
+      // token_version + 1: ends all sessions of this user (a reset is often done
+      // because an account is compromised).
+      passwordSql = ', password_hash = ?, token_version = token_version + 1';
       params.push(bcrypt.hashSync(req.body.password, BCRYPT_ROUNDS));
     }
 
@@ -124,6 +126,12 @@ router.put(
     const user = db
       .prepare('SELECT id, username, role, display_name, created_at, updated_at FROM users WHERE id = ?')
       .get(parseInt(req.params.id));
+
+    // Ändert der Admin sein eigenes Passwort, bleibt er mit neuem Cookie angemeldet.
+    if (req.body.password && user.id === req.user.id) {
+      const aktuell = db.prepare('SELECT token_version FROM users WHERE id = ?').get(user.id);
+      setSessionCookie(res, signSessionToken({ ...user, token_version: aktuell.token_version }));
+    }
 
     // Nur die Tatsache einer Passwortänderung, nie Klartext oder Hash.
     const aenderungen = diffFields(userView(existing), userView(user)) || {};

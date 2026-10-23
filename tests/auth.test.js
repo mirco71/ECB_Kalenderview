@@ -319,6 +319,53 @@ describe('Auth API', () => {
       expect(passend.status).toBeLessThan(300);
     });
 
+    it('vergleicht den Origin nur über den Host, nicht über das Protokoll', async () => {
+      const token = sessionToken(await anmelden('admin'));
+      const host = new URL(baseUrl).host;
+      const cookie = { Cookie: `ecb_session=${token}` };
+      const logout = (origin) => req('POST', '/api/auth/logout', {}, null, { ...cookie, Origin: origin });
+
+      expect((await logout('http://evil.example')).status).toBe(403);
+      expect((await logout('null')).status).toBe(403);
+      expect((await logout('kein url')).status).toBe(403);
+
+      // https-Origin gegen den http-Testserver: Proxys terminieren TLS
+      const res = await logout(`https://${host}`);
+      expect(res.status).toBeGreaterThanOrEqual(200);
+      expect(res.status).toBeLessThan(300);
+    });
+
+    it('beendet Sitzungen, wenn ein Admin das Passwort über /api/users zurücksetzt', async () => {
+      const db = legeBenutzerAn('zuruecksetzen', 'editor');
+      const admin = sessionToken(await anmelden('admin'));
+      const editor = sessionToken(await anmelden('zuruecksetzen'));
+      const id = db.prepare("SELECT id FROM users WHERE username = 'zuruecksetzen'").get().id;
+
+      // Nur der Anzeigename: Token bleibt gültig
+      expect((await req('PUT', `/api/users/${id}`, { display_name: 'Neuer Name' }, admin)).status).toBe(200);
+      expect((await req('GET', '/api/auth/me', null, editor)).status).toBe(200);
+
+      const res = await req('PUT', `/api/users/${id}`, { password: 'zurueckgesetzt1' }, admin);
+      expect(res.status).toBe(200);
+      expect((await req('GET', '/api/auth/me', null, editor)).status).toBe(401);
+      expect((await anmelden('zuruecksetzen', 'zurueckgesetzt1')).status).toBe(200);
+      // Der Admin bleibt angemeldet (anderer Benutzer, kein neues Cookie nötig)
+      expect((await req('GET', '/api/auth/me', null, admin)).status).toBe(200);
+    });
+
+    it('gibt dem Admin ein neues Cookie, wenn er sein eigenes Passwort über /api/users ändert', async () => {
+      const db = legeBenutzerAn('selbstadmin', 'admin');
+      const alt = sessionToken(await anmelden('selbstadmin'));
+      const id = db.prepare("SELECT id FROM users WHERE username = 'selbstadmin'").get().id;
+
+      const res = await req('PUT', `/api/users/${id}`, { password: 'selbstNeu12' }, alt);
+      expect(res.status).toBe(200);
+      const neu = sessionToken(res);
+      expect(neu).toBeDefined();
+      expect((await req('GET', '/api/auth/me', null, alt)).status).toBe(401);
+      expect((await req('GET', '/api/auth/me', null, neu)).status).toBe(200);
+    });
+
     it('erlaubt schreibende Cookie-Anfragen mit Sec-Fetch-Site: same-origin', async () => {
       const token = sessionToken(await anmelden('admin'));
       const res = await req('POST', '/api/auth/logout', {}, null,
