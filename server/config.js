@@ -29,6 +29,19 @@ function resolveJwtSecret() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * Whether the session cookie gets the Secure flag (and the site is served over
+ * HTTPS). SECURE_TRANSPORT=true/false is taken literally; if unset it follows
+ * NODE_ENV=production. For tests in the LAN over http://IP:Port set
+ * SECURE_TRANSPORT=false, otherwise the browser refuses to store the cookie.
+ */
+function resolveSecureTransport() {
+  const wert = process.env.SECURE_TRANSPORT;
+  if (wert === 'true') return true;
+  if (wert === 'false') return false;
+  return (process.env.NODE_ENV || 'development') === 'production';
+}
+
 module.exports = {
   port: parseInt(process.env.PORT) || 3000,
   jwtSecret: resolveJwtSecret(),
@@ -37,6 +50,7 @@ module.exports = {
   startHour: parseInt(process.env.START_HOUR) || 6,
   endHour: parseInt(process.env.END_HOUR) || 23,
   nodeEnv: process.env.NODE_ENV || 'development',
+  secureTransport: resolveSecureTransport(),
   // Optional CORS allow-list. The bundled frontend is served same-origin and
   // needs no CORS at all; only set this if a separate origin must call the API.
   corsOrigin: process.env.CORS_ORIGIN || null,

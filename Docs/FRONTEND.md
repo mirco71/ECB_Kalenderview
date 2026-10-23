@@ -15,11 +15,11 @@ public/
 ## `js/api.js`
 
 Ein einziges `API`-Objekt mit einer `request(method, path, body)`-Basismethode,
-die Token aus `localStorage` (`ecb_token`) anhängt und bei `!res.ok` wirft. Alle
+mit `credentials: 'same-origin'` sendet (die Sitzung ist das HttpOnly-Cookie `ecb_session`) und bei `!res.ok` wirft. Alle
 anderen Methoden (`getEvents`, `createEvent`, `login`, …) sind dünne Wrapper
 darüber. **Neue Endpunkte hier ergänzen**, nicht direkt `fetch()` in `calendar.js`/`admin.js` aufrufen.
 
-Token + eingeloggter User liegen in `localStorage` unter `ecb_token` / `ecb_user`.
+Das Anmelde-Token liegt nur im HttpOnly-Cookie und ist für Skripte nicht lesbar. In `localStorage` steht allein `ecb_user` (Anzeigedaten); `isLoggedIn()` prüft nur dessen Vorhandensein, die Gültigkeit entscheidet der Server (`API.me()`).
 
 ## `admin.html` / `admin.js`
 

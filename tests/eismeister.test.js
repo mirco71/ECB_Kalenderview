@@ -16,6 +16,13 @@ const KAT_EISMEISTER = 12;
 const KAT_NUR_INTERN = 20;      // login_required = 1, eismeister_managed = 0
 const KAT_EISM_OEFFENTLICH = 21; // login_required = 0, eismeister_managed = 1
 
+// Das Anmelde-Token kommt als HttpOnly-Cookie (ecb_session), nicht mehr im Body.
+function sessionToken(res) {
+  const cookies = [].concat(res.headers['set-cookie'] || []);
+  const treffer = cookies.map(c => /^ecb_session=([^;]*)/.exec(c)).find(Boolean);
+  return treffer ? treffer[1] : undefined;
+}
+
 function req(method, urlPath, body = null, token = null) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -31,8 +38,8 @@ function req(method, urlPath, body = null, token = null) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
+        try { resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, headers: res.headers, body: data }); }
       });
     });
     r.on('error', reject);
@@ -88,7 +95,7 @@ describe('Eismeister: Rolle, Kategorie-Kennzeichen, Sichtbarkeit', () => {
 
     const login = async (username) => {
       const res = await req('POST', '/api/auth/login', { username, password: 'testpass' });
-      return res.body.token;
+      return sessionToken(res);
     };
     adminToken = await login('admin');
     editorToken = await login('editor');

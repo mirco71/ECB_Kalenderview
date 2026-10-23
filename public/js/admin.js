@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       `${currentUser.display_name} (${currentUser.role})`;
   } catch (err) {
     // Token invalid/expired
-    API.logout();
+    await API.logout();
     window.location.href = '/login.html';
     return;
   }
@@ -166,8 +166,8 @@ function switchTab(tabName) {
 
 // ============ LOGOUT ============
 
-function logout() {
-  API.logout();
+async function logout() {
+  await API.logout();
   window.location.href = '/login.html';
 }
 

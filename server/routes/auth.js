@@ -1,10 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const config = require('../config');
 const { getDb } = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, setSessionCookie, clearSessionCookie, signSessionToken } = require('../middleware/auth');
 const { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } = require('../passwords');
 const { logAudit } = require('../audit');
 
@@ -58,14 +56,11 @@ router.post(
       summary: 'Angemeldet',
     });
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      config.jwtSecret,
-      { expiresIn: '24h' }
-    );
+    // The token only travels as HttpOnly cookie, never in the body — page
+    // scripts (and thus XSS) cannot read it.
+    setSessionCookie(res, signSessionToken(user));
 
     res.json({
-      token,
       user: {
         id: user.id,
         username: user.username,
@@ -75,6 +70,27 @@ router.post(
     });
   }
 );
+
+// POST /api/auth/logout — beendet die Sitzung serverseitig.
+//
+// token_version hochzählen macht jedes bisher ausgestellte Token dieses Benutzers
+// ungültig (auch auf anderen Geräten); das bloße Löschen des Cookies würde ein
+// abgegriffenes Token weiter gültig lassen.
+router.post('/logout', requireAuth, (req, res) => {
+  const db = getDb();
+  db.prepare("UPDATE users SET token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?")
+    .run(req.user.id);
+
+  logAudit(db, req, {
+    action: 'auth.logout',
+    entityType: 'auth',
+    entityId: req.user.id,
+    summary: 'Abgemeldet',
+  });
+
+  clearSessionCookie(res);
+  res.json({ erfolg: true });
+});
 
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
@@ -95,7 +111,9 @@ router.get('/me', requireAuth, (req, res) => {
 // Verlangt das aktuelle Passwort: Ein kurz unbeaufsichtigter, angemeldeter
 // Browser soll nicht genügen, um das Konto zu übernehmen. Die Route liegt unter
 // /api/auth und damit hinter dem authLimiter, Raten des aktuellen Passworts ist
-// also gebremst. Bereits ausgestellte Tokens bleiben bis zu ihrem Ablauf gültig.
+// also gebremst. Die Änderung zählt token_version hoch und beendet damit alle
+// anderen Sitzungen (ein abgegriffenes Token hilft nach einer Passwortänderung
+// nichts mehr); die aktuelle Sitzung bekommt ein neues Cookie und bleibt angemeldet.
 router.put(
   '/password',
   requireAuth,
@@ -111,7 +129,7 @@ router.put(
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, role, password_hash FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     }
@@ -122,8 +140,11 @@ router.put(
     }
 
     const neuerHash = await bcrypt.hash(req.body.new_password, BCRYPT_ROUNDS);
-    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(neuerHash, user.id);
+    db.prepare(
+      "UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?"
+    ).run(neuerHash, user.id);
+    const aktuell = db.prepare('SELECT token_version FROM users WHERE id = ?').get(user.id);
+    setSessionCookie(res, signSessionToken({ ...user, token_version: aktuell.token_version }));
 
     logAudit(db, req, {
       action: 'auth.password_change',

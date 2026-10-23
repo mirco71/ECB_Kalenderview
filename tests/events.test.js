@@ -8,6 +8,13 @@ process.env.PORT = '0';
 
 let server, baseUrl, adminToken;
 
+// Das Anmelde-Token kommt als HttpOnly-Cookie (ecb_session), nicht mehr im Body.
+function sessionToken(res) {
+  const cookies = [].concat(res.headers['set-cookie'] || []);
+  const treffer = cookies.map(c => /^ecb_session=([^;]*)/.exec(c)).find(Boolean);
+  return treffer ? treffer[1] : undefined;
+}
+
 function req(method, urlPath, body = null, token = null) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -23,8 +30,8 @@ function req(method, urlPath, body = null, token = null) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
+        try { resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, headers: res.headers, body: data }); }
       });
     });
     r.on('error', reject);
@@ -62,7 +69,7 @@ describe('Events API', () => {
     const loginRes = await req('POST', '/api/auth/login', {
       username: 'admin', password: 'testpass',
     });
-    adminToken = loginRes.body.token;
+    adminToken = sessionToken(loginRes);
   });
 
   afterAll(() => { if (server) server.close(); });
