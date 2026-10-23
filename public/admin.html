@@ -13,20 +13,20 @@
       <h1>⚙️ Kalender Verwaltung</h1>
       <div class="admin-header-actions">
         <span id="userInfo"></span>
-        <button class="btn btn-secondary" onclick="openPasswordModal()" title="Eigenes Passwort ändern">🔑 Passwort ändern</button>
+        <button class="btn btn-secondary" data-action="open-password-modal" title="Eigenes Passwort ändern">🔑 Passwort ändern</button>
         <a href="/" class="btn btn-secondary">📅 Kalender</a>
-        <button class="btn btn-secondary" onclick="logout()">Abmelden</button>
+        <button class="btn btn-secondary" data-action="logout">Abmelden</button>
       </div>
     </div>
 
     <!-- Tabs -->
     <div class="admin-tabs">
-      <div class="admin-tab active" data-tab="events" onclick="switchTab('events')">📅 Termine</div>
-      <div class="admin-tab not-eismeister" data-tab="categories" onclick="switchTab('categories')">🎨 Kategorien</div>
-      <div class="admin-tab not-eismeister" data-tab="stats" onclick="switchTab('stats')">📊 Abrechnung</div>
-      <div class="admin-tab admin-only" data-tab="users" onclick="switchTab('users')">👥 Benutzer</div>
-      <div class="admin-tab admin-only" data-tab="synctokens" onclick="switchTab('synctokens')">🔑 Sync-Tokens</div>
-      <div class="admin-tab admin-only" data-tab="audit" onclick="switchTab('audit')">📜 Protokoll</div>
+      <div class="admin-tab active" data-tab="events" data-action="switch-tab">📅 Termine</div>
+      <div class="admin-tab not-eismeister" data-tab="categories" data-action="switch-tab">🎨 Kategorien</div>
+      <div class="admin-tab not-eismeister" data-tab="stats" data-action="switch-tab">📊 Abrechnung</div>
+      <div class="admin-tab admin-only" data-tab="users" data-action="switch-tab">👥 Benutzer</div>
+      <div class="admin-tab admin-only" data-tab="synctokens" data-action="switch-tab">🔑 Sync-Tokens</div>
+      <div class="admin-tab admin-only" data-tab="audit" data-action="switch-tab">📜 Protokoll</div>
     </div>
 
     <!-- Content -->
@@ -39,8 +39,8 @@
           <form id="eventForm">
             <input type="hidden" id="eventId">
             <div class="mode-switch" id="eventModeSwitch">
-              <button type="button" class="mode-btn active" data-mode="single" onclick="setEventMode('single')">Einzeltermin</button>
-              <button type="button" class="mode-btn" data-mode="series" onclick="setEventMode('series')">🔁 Serientermin</button>
+              <button type="button" class="mode-btn active" data-mode="single" data-action="set-event-mode">Einzeltermin</button>
+              <button type="button" class="mode-btn" data-mode="series" data-action="set-event-mode">🔁 Serientermin</button>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -122,7 +122,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="eventSubmitBtn">Termin erstellen</button>
-              <button type="button" class="btn btn-outline" onclick="resetEventForm()" style="display:none" id="eventCancelBtn">Abbrechen</button>
+              <button type="button" class="btn btn-outline" data-action="reset-event-form" style="display:none" id="eventCancelBtn">Abbrechen</button>
             </div>
           </form>
         </div>
@@ -138,7 +138,7 @@
             <input type="date" id="eventFilterEnd">
           </div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="loadEvents()" style="margin-bottom:10px">🔄 Aktualisieren</button>
+        <button class="btn btn-outline btn-sm" data-action="reload-events" style="margin-bottom:10px">🔄 Aktualisieren</button>
         <table class="data-table">
           <thead>
             <tr>
@@ -179,7 +179,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-outline">Vorschau</button>
-              <button type="button" class="btn btn-danger" id="bulkDeleteBtn" disabled onclick="bulkDeleteAusfuehren()">Löschen</button>
+              <button type="button" class="btn btn-danger" id="bulkDeleteBtn" disabled data-action="bulk-delete">Löschen</button>
             </div>
           </form>
           <div id="bulkPreview" class="bulk-preview" style="display:none"></div>
@@ -224,7 +224,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="categorySubmitBtn">Kategorie erstellen</button>
-              <button type="button" class="btn btn-outline" onclick="resetCategoryForm()" style="display:none" id="categoryCancelBtn">Abbrechen</button>
+              <button type="button" class="btn btn-outline" data-action="reset-category-form" style="display:none" id="categoryCancelBtn">Abbrechen</button>
             </div>
           </form>
         </div>
@@ -330,7 +330,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="userSubmitBtn">Benutzer erstellen</button>
-              <button type="button" class="btn btn-outline" onclick="resetUserForm()" style="display:none" id="userCancelBtn">Abbrechen</button>
+              <button type="button" class="btn btn-outline" data-action="reset-user-form" style="display:none" id="userCancelBtn">Abbrechen</button>
             </div>
           </form>
         </div>
@@ -376,8 +376,8 @@
           <div id="syncTokenResult" class="token-result" style="display:none">
             <strong>⚠️ Einmalige Anzeige — jetzt kopieren und in Hallenplanung eintragen.</strong>
             <code id="syncTokenValue"></code>
-            <button type="button" class="btn btn-outline btn-sm" onclick="kopiereSyncToken()">Kopieren</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="verbergeSyncToken()">Fertig</button>
+            <button type="button" class="btn btn-outline btn-sm" data-action="copy-sync-token">Kopieren</button>
+            <button type="button" class="btn btn-outline btn-sm" data-action="hide-sync-token">Fertig</button>
           </div>
         </div>
 
@@ -473,7 +473,7 @@
     <div class="modal modal-small">
       <div class="modal-header">
         <h3>Passwort ändern</h3>
-        <button class="btn-icon" title="Schließen" onclick="closePasswordModal()">✕</button>
+        <button class="btn-icon" title="Schließen" data-action="close-password-modal">✕</button>
       </div>
       <form id="passwordForm" class="modal-section">
         <div class="form-group">
@@ -490,7 +490,7 @@
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Passwort ändern</button>
-          <button type="button" class="btn btn-outline" onclick="closePasswordModal()">Abbrechen</button>
+          <button type="button" class="btn btn-outline" data-action="close-password-modal">Abbrechen</button>
         </div>
       </form>
     </div>
@@ -504,7 +504,7 @@
           <h3 id="seriesModalTitle">Serie</h3>
           <div class="modal-subtitle" id="seriesModalSubtitle"></div>
         </div>
-        <button class="btn-icon" title="Schließen" onclick="closeSeriesModal()">✕</button>
+        <button class="btn-icon" title="Schließen" data-action="close-series-modal">✕</button>
       </div>
 
       <div class="modal-section">
@@ -532,7 +532,7 @@
             <select id="seriesEditCategory"></select>
           </div>
           <div class="form-group" style="justify-content:flex-end">
-            <button class="btn btn-primary btn-sm" onclick="saveSeriesHeader()">Für alle Termine übernehmen</button>
+            <button class="btn btn-primary btn-sm" data-action="save-series-header">Für alle Termine übernehmen</button>
           </div>
         </div>
       </div>
@@ -552,7 +552,7 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-danger btn-sm" onclick="deleteWholeSeries()">Ganze Serie löschen</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-whole-series">Ganze Serie löschen</button>
         <small>Zeit­änderung in der Liste gilt nur für den einzelnen Termin</small>
       </div>
     </div>

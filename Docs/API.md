@@ -1,7 +1,7 @@
 # API-Referenz
 
 Basis: same-origin, kein `/api`-Prefix-Wechsel nötig. Auth via `Authorization: Bearer <jwt>`.
-JWT läuft nach 24h ab (`server/routes/auth.js`).
+JWT läuft nach 8h ab (`server/routes/auth.js`). Er wird als HttpOnly-Cookie `ecb_session` (SameSite=Strict, `Secure` gemäß `SECURE_TRANSPORT`) ausgeliefert; alternativ gilt `Authorization: Bearer`. Cookie-Sitzungen müssen bei schreibenden Anfragen einen passenden `Origin` (oder `Sec-Fetch-Site: same-origin`) mitsenden, sonst `403`.
 
 **Feld-Konvention**: `/api/events` und `/api/stats` antworten mit deutschen Feldnamen
 (`termine`, `titel`, `start`, `ende`, `farbe`, …) — historisch aus der
@@ -45,9 +45,10 @@ Token wird wie „nicht angemeldet" behandelt.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| POST | `/api/auth/login` | `{ username, password }` → `{ token, user }`. Rate-limited (20/15min). |
+| POST | `/api/auth/login` | `{ username, password }` → `{ user }`, Token als Cookie `ecb_session`. Rate-limited (20/15min). |
+| POST | `/api/auth/logout` | Beendet die Sitzung: zählt `users.token_version` hoch (alle Token des Benutzers werden ungültig), löscht das Cookie → `{ erfolg: true }` |
 | GET | `/api/auth/me` | Aktueller User aus Token |
-| PUT | `/api/auth/password` | Eigenes Passwort ändern, alle Rollen. `{ current_password, new_password }` (min. 6 Zeichen). Falsches aktuelles Passwort → `401`. Liegt hinter dem Login-Rate-Limiter. Bereits ausgestellte Tokens bleiben bis zu ihrem Ablauf gültig |
+| PUT | `/api/auth/password` | Eigenes Passwort ändern, alle Rollen. `{ current_password, new_password }` (min. 6 Zeichen). Falsches aktuelles Passwort → `401`. Liegt hinter dem Login-Rate-Limiter. Beendet alle anderen Sitzungen (`token_version`), die aktuelle bekommt ein neues Cookie |
 | POST | `/api/events` | Einzeltermin erstellen (kein Serien-Parameter — dafür `/api/events/series`) |
 | PUT | `/api/events/:id` | Termin aktualisieren (Partial Update, betrifft nur diesen einen Termin, auch bei Serien) |
 | DELETE | `/api/events/:id` | Einzelnen Termin löschen — bei einem Serientermin bleibt die Serie bestehen |

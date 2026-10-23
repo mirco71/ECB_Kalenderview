@@ -10,6 +10,13 @@ process.env.PORT = '0';
 let server, baseUrl, db;
 let adminToken, editorToken;
 
+// Das Anmelde-Token kommt als HttpOnly-Cookie (ecb_session), nicht mehr im Body.
+function sessionToken(res) {
+  const cookies = [].concat(res.headers['set-cookie'] || []);
+  const treffer = cookies.map(c => /^ecb_session=([^;]*)/.exec(c)).find(Boolean);
+  return treffer ? treffer[1] : undefined;
+}
+
 function req(method, urlPath, body = null, token = null, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -25,8 +32,8 @@ function req(method, urlPath, body = null, token = null, extraHeaders = {}) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
+        try { resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, headers: res.headers, body: data }); }
       });
     });
     r.on('error', reject);
@@ -66,8 +73,8 @@ describe('Änderungsprotokoll', () => {
       });
     });
 
-    adminToken = (await login('admin', 'testpass123')).body.token;
-    editorToken = (await login('editor', 'testpass123')).body.token;
+    adminToken = sessionToken(await login('admin', 'testpass123'));
+    editorToken = sessionToken(await login('editor', 'testpass123'));
   });
 
   afterAll(() => { if (server) server.close(); });

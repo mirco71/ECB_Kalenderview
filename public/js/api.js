@@ -1,27 +1,21 @@
 /**
  * API helper — centralizes all fetch calls to the backend.
  */
+// Token used to live in localStorage (readable by any script); remove leftovers once.
+try { localStorage.removeItem('ecb_token'); } catch (e) { /* storage unavailable */ }
+
 const API = {
   baseUrl: '',
 
   /**
-   * Get auth token from localStorage
-   */
-  getToken() {
-    return localStorage.getItem('ecb_token');
-  },
-
-  /**
-   * Make an authenticated request
+   * Make a request. The session lives in the HttpOnly cookie "ecb_session",
+   * which the browser sends by itself (credentials: 'same-origin') and which
+   * scripts cannot read — there is no token handling in the frontend.
    */
   async request(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' };
-    const token = this.getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
-    const options = { method, headers };
+    const options = { method, headers, credentials: 'same-origin' };
     if (body && method !== 'GET') {
       options.body = JSON.stringify(body);
     }
@@ -30,6 +24,9 @@ const API = {
     const data = await res.json();
 
     if (!res.ok) {
+      // Session invalid or expired: forget the display data, so isLoggedIn()
+      // does not keep pretending (and login.html does not bounce back).
+      if (res.status === 401) localStorage.removeItem('ecb_user');
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
@@ -40,13 +37,17 @@ const API = {
 
   async login(username, password) {
     const data = await this.request('POST', '/api/auth/login', { username, password });
-    localStorage.setItem('ecb_token', data.token);
+    // Display data only, not security relevant — the session is the cookie.
     localStorage.setItem('ecb_user', JSON.stringify(data.user));
     return data;
   },
 
-  logout() {
-    localStorage.removeItem('ecb_token');
+  async logout() {
+    try {
+      await this.request('POST', '/api/auth/logout');
+    } catch (err) {
+      // Ignore: with an already invalid session there is nothing left to revoke.
+    }
     localStorage.removeItem('ecb_user');
   },
 
@@ -66,8 +67,10 @@ const API = {
     return raw ? JSON.parse(raw) : null;
   },
 
+  // Only means "display data present" — the server decides whether the session
+  // is valid (see me()).
   isLoggedIn() {
-    return !!this.getToken();
+    return !!localStorage.getItem('ecb_user');
   },
 
   // ============ EVENTS ============

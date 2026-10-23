@@ -3,13 +3,14 @@ const { body, param, validationResult } = require('express-validator');
 const { getDb } = require('../database');
 const { requireAuth, optionalAuth, requireAdmin } = require('../middleware/auth');
 const { logAudit, diffFields, categoryView } = require('../audit');
+const { HEX_PATTERN, COLOR_PATTERN, safeHex, safeBg } = require('../colors');
 
 const router = express.Router();
 
 // Accepts a 6-digit hex color or an rgb()/rgba() value with numeric components.
 // Restricting the format prevents CSS/HTML injection when the value is later
-// rendered into an inline style attribute on the public calendar.
-const COLOR_PATTERN = /^(#[0-9a-fA-F]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/;
+// rendered into an inline style attribute on the public calendar. The patterns
+// live in colors.js, which also guards the output side (safeHex/safeBg).
 
 // GET /api/categories (public; anmeldepflichtige Kategorien nur für Angemeldete)
 router.get('/', optionalAuth, (req, res) => {
@@ -17,7 +18,8 @@ router.get('/', optionalAuth, (req, res) => {
   const filter = req.user ? '' : ' WHERE login_required = 0';
   const categories = db
     .prepare(`SELECT * FROM categories${filter} ORDER BY sort_order ASC`)
-    .all();
+    .all()
+    .map(c => ({ ...c, color_hex: safeHex(c.color_hex), color_bg: safeBg(c.color_bg) }));
   res.json(categories);
 });
 
@@ -28,7 +30,7 @@ router.post(
   requireAdmin,
   [
     body('name').trim().notEmpty().withMessage('Name erforderlich'),
-    body('color_hex').matches(/^#[0-9a-fA-F]{6}$/).withMessage('Ungültige Farbe (z.B. #ff0000)'),
+    body('color_hex').matches(HEX_PATTERN).withMessage('Ungültige Farbe (z.B. #ff0000)'),
     body('color_bg').matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
     body('group_by_title').optional().isBoolean(),
@@ -81,7 +83,7 @@ router.put(
   [
     param('id').isInt(),
     body('name').optional().trim().notEmpty(),
-    body('color_hex').optional().matches(/^#[0-9a-fA-F]{6}$/),
+    body('color_hex').optional().matches(HEX_PATTERN),
     body('color_bg').optional().matches(COLOR_PATTERN).withMessage('Ungültige Hintergrundfarbe (Hex oder rgb/rgba)'),
     body('sort_order').optional().isInt(),
     body('group_by_title').optional().isBoolean(),

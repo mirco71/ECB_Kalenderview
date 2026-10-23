@@ -7,18 +7,28 @@
  * und das Frontend muss nichts nachschlagen.
  *
  * Nie ins Protokoll: Passwörter, Passwort-Hashes, Token-Klartexte.
+ *
+ * Aufbewahrung: IP-Adressen werden nach 90 Tagen entfernt (ip = NULL), die
+ * Einträge selbst nach 6 Monaten gelöscht.
  */
 const { toLocalDateString, toLocalTimeString } = require('./datetime');
 
 const RETENTION = '-6 months';
+const IP_RETENTION = '-90 days';
 const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let lastPrune = 0;
 
-/** Entfernt Einträge jenseits der Aufbewahrungsfrist. Fasst nur audit_log an. */
+/**
+ * Löscht Einträge jenseits der Aufbewahrungsfrist und entfernt die IP-Adresse
+ * aus Einträgen, die älter als 90 Tage sind. Fasst nur audit_log an.
+ */
 function pruneAudit(db) {
   lastPrune = Date.now();
   try {
     db.prepare(`DELETE FROM audit_log WHERE created_at < datetime('now', '${RETENTION}')`).run();
+    db.prepare(
+      `UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND created_at < datetime('now', '${IP_RETENTION}')`
+    ).run();
   } catch (err) {
     console.error('Aufräumen des Änderungsprotokolls fehlgeschlagen:', err);
   }

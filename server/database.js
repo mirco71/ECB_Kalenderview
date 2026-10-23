@@ -331,6 +331,12 @@ function migrate() {
 
   migrateEismeisterRolle();
   seedEismeisterKategorie();
+
+  // Session revocation: every JWT carries the token_version it was issued with;
+  // logout and password change bump it and thereby invalidate all older tokens.
+  // After migrateEismeisterRolle() on purpose: the rebuild copies the column
+  // list explicitly, so the column added here cannot get lost in it.
+  try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
 }
 
 /**
@@ -352,6 +358,11 @@ function migrateEismeisterRolle() {
       .get();
     if (!vorhanden || !vorhanden.sql || vorhanden.sql.includes('eismeister')) return;
 
+    // token_version is added after this rebuild (see migrate()); should it exist
+    // already, it must survive the rebuild or all sessions would be revived.
+    const hatTokenVersion = db.prepare('PRAGMA table_info(users)').all()
+      .some(spalte => spalte.name === 'token_version');
+
     db.pragma('foreign_keys = OFF');
     db.exec(`CREATE TABLE users_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -360,11 +371,13 @@ function migrateEismeisterRolle() {
       role TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('admin', 'editor', 'eismeister')),
       display_name TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))${hatTokenVersion ? ', token_version INTEGER NOT NULL DEFAULT 0' : ''}
     )`);
     db.exec(
-      'INSERT INTO users_new (id, username, password_hash, role, display_name, created_at, updated_at) ' +
-      'SELECT id, username, password_hash, role, display_name, created_at, updated_at FROM users'
+      'INSERT INTO users_new (id, username, password_hash, role, display_name, created_at, updated_at' +
+      (hatTokenVersion ? ', token_version' : '') + ') ' +
+      'SELECT id, username, password_hash, role, display_name, created_at, updated_at' +
+      (hatTokenVersion ? ', token_version' : '') + ' FROM users'
     );
     db.exec('DROP TABLE users');
     db.exec('ALTER TABLE users_new RENAME TO users');

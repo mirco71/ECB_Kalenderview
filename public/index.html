@@ -12,16 +12,16 @@
       <h1 id="kalenderName">📅 Kalender</h1>
       <div class="nav-controls">
         <div class="view-switch">
-          <button class="nav-btn view-btn active" id="btnWoche" onclick="setzeAnsicht('woche')">Woche</button>
-          <button class="nav-btn view-btn" id="btnMonat" onclick="setzeAnsicht('monat')">Monat</button>
+          <button class="nav-btn view-btn active" id="btnWoche" data-action="set-view" data-view="woche">Woche</button>
+          <button class="nav-btn view-btn" id="btnMonat" data-action="set-view" data-view="monat">Monat</button>
         </div>
-        <button class="nav-btn" id="btnMonatZurueck" onclick="vorherigerMonat()" title="Einen Monat zurück">«</button>
-        <button class="nav-btn" onclick="zurueck()">← Vorherige</button>
+        <button class="nav-btn" id="btnMonatZurueck" data-action="prev-month" title="Einen Monat zurück">«</button>
+        <button class="nav-btn" data-action="prev">← Vorherige</button>
         <span class="week-info" id="weekInfo">KW --</span>
-        <button class="nav-btn" onclick="vor()">Nächste →</button>
-        <button class="nav-btn" id="btnMonatVor" onclick="naechsterMonat()" title="Einen Monat vor">»</button>
-        <button class="nav-btn" onclick="heuteAnzeigen()">Heute</button>
-        <input type="date" class="nav-date" id="datumSprung" onchange="springeZuDatum(this.value)" title="Zu Datum springen">
+        <button class="nav-btn" data-action="next">Nächste →</button>
+        <button class="nav-btn" id="btnMonatVor" data-action="next-month" title="Einen Monat vor">»</button>
+        <button class="nav-btn" data-action="today">Heute</button>
+        <input type="date" class="nav-date" id="datumSprung" data-action="jump-to-date" title="Zu Datum springen">
       </div>
     </div>
     

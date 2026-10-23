@@ -10,6 +10,8 @@ let users = [];
 // ============ INIT ============
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initEventListeners();
+
   // Check auth
   if (!API.isLoggedIn()) {
     window.location.href = '/login.html';
@@ -22,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       `${currentUser.display_name} (${currentUser.role})`;
   } catch (err) {
     // Token invalid/expired
-    API.logout();
+    await API.logout();
     window.location.href = '/login.html';
     return;
   }
@@ -53,6 +55,75 @@ document.addEventListener('DOMContentLoaded', async () => {
   initStats();
   initPasswordModal();
 });
+
+/**
+ * Registriert alle Klick-/Change-Handler einmalig (die CSP verbietet
+ * Inline-Handler). Statische Elemente tragen data-action und werden direkt
+ * gebunden. Per innerHTML neu gerenderte Listen bekommen genau einen delegierten
+ * Listener am stabilen <tbody>, der das Rendern überlebt.
+ */
+function initEventListeners() {
+  const staticActions = {
+    'open-password-modal': () => openPasswordModal(),
+    'logout': () => logout(),
+    'switch-tab': (el) => switchTab(el.dataset.tab),
+    'set-event-mode': (el) => setEventMode(el.dataset.mode),
+    'reset-event-form': () => resetEventForm(),
+    'reload-events': () => loadEvents(),
+    'bulk-delete': () => bulkDeleteAusfuehren(),
+    'reset-category-form': () => resetCategoryForm(),
+    'reset-user-form': () => resetUserForm(),
+    'copy-sync-token': () => kopiereSyncToken(),
+    'hide-sync-token': () => verbergeSyncToken(),
+    'close-password-modal': () => closePasswordModal(),
+    'close-series-modal': () => closeSeriesModal(),
+    'save-series-header': () => saveSeriesHeader(),
+    'delete-whole-series': () => deleteWholeSeries(),
+  };
+  document.querySelectorAll('[data-action]').forEach(el => {
+    const handler = staticActions[el.dataset.action];
+    if (handler) el.addEventListener('click', () => handler(el));
+  });
+
+  // Delegation: ein Listener pro stabilem Container. closest() findet das
+  // innerste data-action-Element, ein Klick auf den Button in der Serienzeile
+  // löst also nicht zusätzlich die Zeile aus.
+  const delegate = (containerId, eventName, handlers) => {
+    const container = document.getElementById(containerId);
+    container.addEventListener(eventName, (e) => {
+      const el = e.target.closest('[data-action]');
+      if (!el || !container.contains(el)) return;
+      const handler = handlers[el.dataset.action];
+      if (handler) handler(el);
+    });
+  };
+  const id = (el) => Number(el.dataset.id);
+
+  delegate('eventsTableBody', 'click', {
+    'edit-event': (el) => editEvent(id(el)),
+    'delete-event': (el) => deleteEvent(id(el)),
+    'open-series': (el) => openSeriesModal(el.dataset.seriesId),
+  });
+  delegate('seriesEventsBody', 'click', {
+    'delete-occurrence': (el) => deleteOccurrence(id(el)),
+  });
+  delegate('seriesEventsBody', 'change', {
+    'occurrence-time': (el) => (el.dataset.field === 'start'
+      ? updateOccurrenceTime(id(el), el.value, null)
+      : updateOccurrenceTime(id(el), null, el.value)),
+  });
+  delegate('categoriesTableBody', 'click', {
+    'edit-category': (el) => editCategory(id(el)),
+    'delete-category': (el) => deleteCategory(id(el)),
+  });
+  delegate('usersTableBody', 'click', {
+    'edit-user': (el) => editUser(id(el)),
+    'delete-user': (el) => deleteUser(id(el)),
+  });
+  delegate('syncTokensTableBody', 'click', {
+    'delete-sync-token': (el) => deleteSyncToken(id(el)),
+  });
+}
 
 /**
  * Blendet Bereiche aus, für die die Rolle keine Berechtigung hat.
@@ -166,8 +237,8 @@ function switchTab(tabName) {
 
 // ============ LOGOUT ============
 
-function logout() {
-  API.logout();
+async function logout() {
+  await API.logout();
   window.location.href = '/login.html';
 }
 
@@ -304,8 +375,8 @@ function renderEventRow(t) {
   // Termine fremder Kategorien bleiben sichtbar, aber ohne Aktionen — der Server
   // würde sie mit 403 ablehnen.
   const aktionen = darfKategorieBearbeiten(t.farbe)
-    ? `<button class="btn-icon" title="Bearbeiten" onclick="editEvent(${t.id})">✏️</button>
-       <button class="btn-icon" title="Löschen" onclick="deleteEvent(${t.id})">🗑️</button>`
+    ? `<button class="btn-icon" title="Bearbeiten" data-action="edit-event" data-id="${t.id}">✏️</button>
+       <button class="btn-icon" title="Löschen" data-action="delete-event" data-id="${t.id}">🗑️</button>`
     : '';
 
   return `
@@ -330,13 +401,13 @@ function renderSeriesRow(t) {
   const darf = darfKategorieBearbeiten(t.farbe);
 
   return `
-    <tr class="${darf ? 'series-row' : ''}" ${darf ? `onclick="openSeriesModal('${escapeHtml(t.series_id)}')"` : ''}>
+    <tr class="${darf ? 'series-row' : ''}" ${darf ? `data-action="open-series" data-series-id="${escapeHtml(t.series_id)}"` : ''}>
       <td>🔁 ${escapeHtml(t.titel)}<span class="series-badge">${escapeHtml(count)}</span></td>
       <td><span class="color-preview" style="background:${escapeHtml(t.farbHex)}"></span>${escapeHtml(t.farbName)}</td>
       <td colspan="2">${escapeHtml(rhythm)} · ${escapeHtml(period)}</td>
       <td></td>
       <td class="actions">
-        ${darf ? `<button class="btn-icon" title="Serie öffnen" onclick="event.stopPropagation();openSeriesModal('${escapeHtml(t.series_id)}')">📂</button>` : ''}
+        ${darf ? `<button class="btn-icon" title="Serie öffnen" data-action="open-series" data-series-id="${escapeHtml(t.series_id)}">📂</button>` : ''}
       </td>
     </tr>
   `;
@@ -586,10 +657,10 @@ function renderSeriesModal() {
     return `
       <tr class="${t.entfaelltWegenSpiel ? 'cancelled' : t.abweichend ? 'deviating' : ''}">
         <td>${escapeHtml(formatWeekdayDate(start))}${t.abweichend ? '<span class="deviating-badge">abweichend</span>' : ''}${ausfallHinweis(t)}</td>
-        <td><input type="time" value="${escapeHtml(toTimeValue(start))}" onchange="updateOccurrenceTime(${t.id}, this.value, null)"></td>
-        <td><input type="time" value="${escapeHtml(toTimeValue(end))}" onchange="updateOccurrenceTime(${t.id}, null, this.value)"></td>
+        <td><input type="time" value="${escapeHtml(toTimeValue(start))}" data-action="occurrence-time" data-field="start" data-id="${t.id}"></td>
+        <td><input type="time" value="${escapeHtml(toTimeValue(end))}" data-action="occurrence-time" data-field="end" data-id="${t.id}"></td>
         <td class="actions">
-          <button class="btn-icon" title="Diesen Termin löschen" onclick="deleteOccurrence(${t.id})">🗑️</button>
+          <button class="btn-icon" title="Diesen Termin löschen" data-action="delete-occurrence" data-id="${t.id}">🗑️</button>
         </td>
       </tr>
     `;
@@ -745,8 +816,8 @@ async function loadCategories() {
         <td>${c.group_by_title ? 'nach Titel' : 'gesamt'}</td>
         <td>${c.login_required ? '🔒 nur angemeldet' : 'öffentlich'}${c.eismeister_managed ? ' · Eismeister' : ''}</td>
         <td class="actions admin-only">
-          <button class="btn-icon" title="Bearbeiten" onclick="editCategory(${c.id})">✏️</button>
-          <button class="btn-icon" title="Löschen" onclick="deleteCategory(${c.id})">🗑️</button>
+          <button class="btn-icon" title="Bearbeiten" data-action="edit-category" data-id="${c.id}">✏️</button>
+          <button class="btn-icon" title="Löschen" data-action="delete-category" data-id="${c.id}">🗑️</button>
         </td>
       </tr>
     `).join('');
@@ -843,7 +914,7 @@ async function loadUsers() {
     users = await API.getUsers();
     const tbody = document.getElementById('usersTableBody');
 
-    // Inline handlers receive only numeric ids; username/display_name are
+    // The buttons carry only the numeric id (data-id); username/display_name are
     // looked up from `users` in the handler, never injected into attributes.
     tbody.innerHTML = users.map(u => `
       <tr>
@@ -852,8 +923,8 @@ async function loadUsers() {
         <td>${escapeHtml(u.display_name)}</td>
         <td>${ROLLEN_ANZEIGE[u.role] || escapeHtml(u.role)}</td>
         <td class="actions">
-          <button class="btn-icon" title="Bearbeiten" onclick="editUser(${u.id})">✏️</button>
-          ${u.id !== currentUser.id ? `<button class="btn-icon" title="Löschen" onclick="deleteUser(${u.id})">🗑️</button>` : ''}
+          <button class="btn-icon" title="Bearbeiten" data-action="edit-user" data-id="${u.id}">✏️</button>
+          ${u.id !== currentUser.id ? `<button class="btn-icon" title="Löschen" data-action="delete-user" data-id="${u.id}">🗑️</button>` : ''}
         </td>
       </tr>
     `).join('');
@@ -1315,7 +1386,7 @@ async function loadSyncTokens() {
       return;
     }
 
-    // Nur die numerische ID landet im Handler; die Bezeichnung wird beim
+    // Nur die numerische ID landet im data-Attribut; die Bezeichnung wird beim
     // Widerrufen aus `syncTokens` nachgeschlagen.
     tbody.innerHTML = syncTokens.map(t => `
       <tr>
@@ -1325,7 +1396,7 @@ async function loadSyncTokens() {
         <td>${formatDatetime(t.created_at)}</td>
         <td>${t.last_used_at ? formatDatetime(t.last_used_at) : 'nie'}</td>
         <td class="actions">
-          <button class="btn-icon" title="Widerrufen" onclick="deleteSyncToken(${t.id})">🗑️</button>
+          <button class="btn-icon" title="Widerrufen" data-action="delete-sync-token" data-id="${t.id}">🗑️</button>
         </td>
       </tr>
     `).join('');

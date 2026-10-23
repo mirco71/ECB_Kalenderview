@@ -21,6 +21,11 @@ services:
       CALENDAR_NAME: ${CALENDAR_NAME:-Eisbelegung Eissporthalle Solingen}
       START_HOUR: ${START_HOUR:-6}
       END_HOUR: ${END_HOUR:-23}
+      # HTTPS-Pflicht für Login-Cookie und upgrade-insecure-requests. Leer =
+      # an (NODE_ENV=production). Nur für Zugriff per http://<NAS-IP>:3050 auf false.
+      SECURE_TRANSPORT: ${SECURE_TRANSPORT:-}
+      # Kontakt für /.well-known/security.txt, z. B. mailto:... Leer = 404.
+      SECURITY_CONTACT: ${SECURITY_CONTACT:-}
     volumes:
       - ecb-data:/app/data
       # Alternative: Bind-Mount auf einen Synology-Freigabeordner statt
