@@ -12,6 +12,7 @@ const {
   MAX_SERIES_EVENTS,
 } = require('../datetime');
 const { bewerteTrainings } = require('../trainingAusfall');
+const { safeHex, safeBg } = require('../colors');
 const { logAudit, diffFields, formatWhen, formatDate, eventView, seriesView } = require('../audit');
 
 const router = express.Router();
@@ -90,7 +91,9 @@ router.get(
     }
 
     const { start, end } = req.query;
-    const includeExtern = req.query.include_extern === 'true' || req.query.include_extern === '1';
+    // Auswärtstermine nur für Angemeldete: Anonym wird include_extern ignoriert.
+    const includeExtern = !!req.user &&
+      (req.query.include_extern === 'true' || req.query.include_extern === '1');
     const db = getDb();
 
     const hallFilter = includeExtern ? '' : ' AND e.in_hall = 1';
@@ -109,7 +112,7 @@ router.get(
     const ausfall = bewerteTrainings(db, events);
     const termine = events
       .filter(e => includeExtern || !ausfall.entfaelltKomplett(e))
-      .map(e => ({ ...mapEventToTermin(e), ...ausfallFelder(ausfall, e) }));
+      .map(e => ({ ...mapEventToTermin(e, req.user), ...ausfallFelder(ausfall, e) }));
 
     res.json({
       erfolg: true,
@@ -137,7 +140,7 @@ router.get('/:id', optionalAuth, param('id').isInt(), (req, res) => {
     return res.status(404).json({ error: 'Termin nicht gefunden' });
   }
 
-  res.json(mapEventToTermin(event));
+  res.json(mapEventToTermin(event, req.user));
 });
 
 // POST /api/events — single event only. Series are created via POST /api/events/series.
@@ -201,7 +204,7 @@ router.post(
       summary: `Termin „${event.title}" am ${formatWhen(event.start_time)} angelegt`,
       details: { daten: eventView(db, event) },
     });
-    res.status(201).json(mapEventToTermin(event));
+    res.status(201).json(mapEventToTermin(event, req.user));
   }
 );
 
@@ -288,7 +291,7 @@ router.put(
     }
 
     const event = db.prepare(EVENT_SELECT).get(parseInt(req.params.id));
-    res.json(mapEventToTermin(event));
+    res.json(mapEventToTermin(event, req.user));
   }
 );
 
@@ -539,7 +542,7 @@ router.post(
     res.status(201).json({
       erfolg: true,
       message: `${occurrences.length} Termine erstellt`,
-      ...loadSeries(db, seriesId),
+      ...loadSeries(db, seriesId, req.user),
     });
   }
 );
@@ -547,7 +550,7 @@ router.post(
 // GET /api/events/series/:seriesId — series definition plus all its events
 router.get('/series/:seriesId', requireAuth, (req, res) => {
   const db = getDb();
-  const data = loadSeries(db, req.params.seriesId);
+  const data = loadSeries(db, req.params.seriesId, req.user);
   if (!data) {
     return res.status(404).json({ error: 'Terminserie nicht gefunden' });
   }
@@ -691,7 +694,7 @@ router.put(
       });
     }
 
-    res.json({ erfolg: true, ...loadSeries(db, seriesId) });
+    res.json({ erfolg: true, ...loadSeries(db, seriesId, req.user) });
   }
 );
 
@@ -736,7 +739,7 @@ router.delete('/series/:seriesId', requireAuth, (req, res) => {
  * `abweichend` flag: true when its wall-clock time differs from the series
  * definition (an individually adjusted occurrence).
  */
-function loadSeries(db, seriesId) {
+function loadSeries(db, seriesId, user) {
   const series = db
     .prepare(
       `SELECT s.*, c.name as category_name, c.color_hex as category_color
@@ -758,7 +761,7 @@ function loadSeries(db, seriesId) {
       titel: series.title,
       category_id: series.category_id,
       farbName: series.category_name,
-      farbHex: series.category_color,
+      farbHex: safeHex(series.category_color),
       wochentag: series.weekday,
       zeitVon: series.time_from,
       zeitBis: series.time_to,
@@ -769,7 +772,7 @@ function loadSeries(db, seriesId) {
       anzahl: events.length,
     },
     termine: events.map(row => ({
-      ...mapEventToTermin(row),
+      ...mapEventToTermin(row, user),
       ...ausfallFelder(ausfall, row),
       abweichend:
         toLocalTimeString(new Date(row.start_time)) !== series.time_from ||
@@ -778,7 +781,8 @@ function loadSeries(db, seriesId) {
   };
 }
 
-function mapEventToTermin(row) {
+// `created_by` ist intern und geht nur an angemeldete Benutzer.
+function mapEventToTermin(row, user) {
   return {
     id: row.id,
     titel: row.title,
@@ -786,8 +790,9 @@ function mapEventToTermin(row) {
     ende: new Date(row.end_time).getTime(),
     farbe: String(row.category_id),
     farbName: row.category_name,
-    farbHex: row.category_color,
-    farbBg: row.category_color_bg,
+    // Farben nur validiert ausgeben (siehe colors.js), sonst Standardwert.
+    farbHex: safeHex(row.category_color),
+    farbBg: safeBg(row.category_color_bg),
     ganztaegig: row.all_day === 1,
     beschreibung: row.description || '',
     ort: row.location || '',
@@ -803,7 +808,7 @@ function mapEventToTermin(row) {
           anzahl: row.series_count,
         }
       : null,
-    created_by: row.created_by,
+    ...(user ? { created_by: row.created_by } : {}),
   };
 }
 

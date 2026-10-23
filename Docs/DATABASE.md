@@ -204,7 +204,7 @@ in der Vorschau von Hallenplanung.
 
 **Nie** in `details`: Passwörter, Passwort-Hashes, Token-Klartexte (Tests prüfen das).
 
-**Aufbewahrung 6 Monate**: `pruneAudit()` löscht ältere Einträge beim Start und
+**Aufbewahrung**: IP-Adressen werden nach 90 Tagen entfernt, Einträge nach 6 Monaten gelöscht. `pruneAudit()` löscht ältere Einträge beim Start und
 danach höchstens einmal täglich aus `logAudit()` heraus — ohne eigenen Timer.
 Das hält die Datei klein, die sql.js nach jedem Schreibvorgang komplett neu schreibt.
 

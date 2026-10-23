@@ -4,6 +4,7 @@ const { getDb } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { TEAMS } = require('../teams');
 const { bewerteTrainings } = require('../trainingAusfall');
+const { safeHex } = require('../colors');
 
 const router = express.Router();
 
@@ -192,7 +193,7 @@ router.get(
         gruppen.set(ev.category_id, {
           category_id: ev.category_id,
           name: ev.category_name,
-          color_hex: ev.category_color,
+          color_hex: safeHex(ev.category_color),
           anzahl: 0,
           dauerMinuten: 0,
           // Fuer die Netto-Belegung: die Termine der Kategorie selbst.

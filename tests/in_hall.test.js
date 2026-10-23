@@ -123,7 +123,7 @@ describe('in_hall — Hallenbelegung vs. Team-Kalender', () => {
   });
 
   it('zeigt sie mit include_extern für die Verwaltung', async () => {
-    const res = await req('GET', `/api/events?${range}&include_extern=1`);
+    const res = await req('GET', `/api/events?${range}&include_extern=1`, null, adminToken);
     const titel = res.body.termine.map(t => t.titel ?? t.title);
 
     expect(titel).toContain('U17 Auswärtsspiel in Neuss');
