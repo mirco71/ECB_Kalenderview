@@ -68,6 +68,8 @@ Im Stack-Editor unter **Environment variables** hinzufügen:
 | `CALENDAR_NAME` | optional, Standard: `Eisbelegung Eissporthalle Solingen` |
 | `START_HOUR` | optional, Standard: `6` |
 | `END_HOUR` | optional, Standard: `23` |
+| `SECURE_TRANSPORT` | optional. Leer = `true` (HTTPS-Pflicht: Login-Cookie mit `Secure`, `upgrade-insecure-requests`). **`false` nur, wenn die App per `http://<nas-ip>:3050` ohne HTTPS genutzt wird** — sonst funktioniert dort weder Login noch CSS/JS |
+| `SECURITY_CONTACT` | optional, z. B. `mailto:security@example.de`. Gesetzt: App liefert `/.well-known/security.txt`. Leer: 404 |
 
 `JWT_SECRET` ist **pflicht** — der Stack bricht das Deployment bewusst ab, wenn die
 Variable fehlt, damit nicht versehentlich ein unsicherer Default verwendet wird.
@@ -246,7 +248,7 @@ darüber) und der Volume-Name (sonst startet die App mit leerer Datenbank).
 | Login schlägt fehl nach Neuinstallation | Admin-Benutzer noch nicht geseedet — Schritt 4 durchführen |
 | "Pull and redeploy" schlägt mit Auth-Fehler fehl | PAT abgelaufen — neues Token erzeugen (Schritt 1a) und in Portainer unter Authentication aktualisieren |
 | "pull access denied for ecb-kalender … repository does not exist" | Beim Redeploy "Re-pull image" deaktiviert lassen (Schritt 8) — das Image wird lokal gebaut, nicht aus einer Registry gezogen |
-| Seite lädt, aber ohne Styling (CSS/JS-Fehler `ERR_SSL_PROTOCOL_ERROR`) | Alter Stand — sicherstellen, dass der Commit mit deaktiviertem `upgrade-insecure-requests` deployt ist, dann Browser hart neu laden (Strg+F5) |
+| Seite lädt per `http://<nas-ip>:3050` ohne Styling (`ERR_SSL_PROTOCOL_ERROR`) oder Login tut nichts | Zugriff ohne HTTPS: Stack-Variable `SECURE_TRANSPORT=false` setzen, **Update the stack**, Browser hart neu laden (Strg+F5). Über die Cloudflare-Domain (HTTPS) nicht nötig |
 | Repo nicht auffindbar / 404 beim Klonen | Authentication nicht aktiviert oder falscher Username/Token — Schritt 1b prüfen |
 | Deploy mit `docker-compose.tunnel.yml` bricht ab: "network ecb-tunnel declared as external, but could not be found" | Netz fehlt auf dem Host — `docker network create ecb-tunnel` (Schritt 10) |
 | Tunnel liefert 502 nach der Umstellung | cloudflared zeigt noch auf `Host-IP:3050` oder hängt nicht im Netz `ecb-tunnel` — Schritte 2 und 4 prüfen |
