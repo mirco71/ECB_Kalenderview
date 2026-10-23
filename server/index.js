@@ -5,6 +5,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const { dbReady } = require('./database');
+const { loadVersionedPages } = require('./assets');
 
 const app = express();
 
@@ -174,8 +175,25 @@ app.use(['/login.html', '/admin.html'], (req, res, next) => {
   next();
 });
 
+// HTML pages with versioned JS/CSS references (?v=<hash of the assets>), read once
+// at start. Cloudflare caches JS for 4h; without the version a browser can keep
+// running an outdated api.js against a newer server. The HTML itself is
+// no-cache so the new references are picked up immediately. Must stay before
+// express.static (which would serve the unversioned files) and after the
+// X-Robots-Tag middleware above.
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const { pages: htmlPages } = loadVersionedPages(PUBLIC_DIR);
+function sendPage(res, name) {
+  res
+    .set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+    .send(htmlPages[name]);
+}
+app.get(['/', '/index.html'], (req, res) => sendPage(res, 'index.html'));
+app.get('/login.html', (req, res) => sendPage(res, 'login.html'));
+app.get('/admin.html', (req, res) => sendPage(res, 'admin.html'));
+
 // Static files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(PUBLIC_DIR));
 
 // SPA fallback — index.html only for extension-less GET paths (client-side
 // routes). Anything that looks like a file but was not found by express.static
@@ -188,7 +206,7 @@ app.get('*', (req, res) => {
   if (lastSegment.includes('.')) {
     return res.status(404).type('text/plain').send('Nicht gefunden');
   }
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  sendPage(res, 'index.html');
 });
 
 // ============ ERROR HANDLER ============
