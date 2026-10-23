@@ -84,39 +84,52 @@ function isSameOrigin(req) {
 }
 
 /**
- * Shared by requireAuth and optionalAuth. Returns { user } on success or
- * { status, error } on failure; `anonymous` means no credentials were sent.
- *
- * Token source: Authorization: Bearer first, otherwise the session cookie.
- * The role always comes from the database, never from the token, so a role
- * change or a deleted account takes effect immediately.
+ * Verifies a login JWT and matches it against the database. Returns the user
+ * row or null. The role always comes from the database, never from the token,
+ * so a role change or a deleted account takes effect immediately.
  */
-function authenticate(req) {
-  const authHeader = req.headers.authorization;
-  let token = null;
-  let fromCookie = false;
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else {
-    token = readCookie(req, SESSION_COOKIE);
-    fromCookie = !!token;
-  }
-
-  if (!token) return { anonymous: true, status: 401, error: 'Authentifizierung erforderlich' };
-
+function verifyLoginToken(token) {
   let decoded;
   try {
     // Pin the algorithm so a token cannot dictate a weaker/none verification.
     decoded = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
   } catch (err) {
-    return { status: 401, error: 'Ungültiger oder abgelaufener Token' };
+    return null;
   }
-
   const dbUser = getDb()
     .prepare('SELECT id, username, role, token_version FROM users WHERE id = ?')
     .get(decoded.id);
-  if (!dbUser || decoded.tv !== dbUser.token_version) {
+  if (!dbUser || decoded.tv !== dbUser.token_version) return null;
+  return dbUser;
+}
+
+/**
+ * Shared by requireAuth and optionalAuth. Returns { user } on success or
+ * { status, error } on failure; `anonymous` means no credentials were sent.
+ *
+ * Token source: Authorization: Bearer first, otherwise the session cookie.
+ * A Bearer header that does not yield a valid login token falls back to the
+ * cookie: browsers with an outdated script in their cache (Cloudflare serves JS
+ * with max-age=14400) store "undefined" as token after login and send
+ * "Authorization: Bearer undefined" next to a perfectly valid cookie. Without
+ * the fallback that ends in a login loop. The cookie path keeps its CSRF check.
+ */
+function authenticate(req) {
+  const authHeader = req.headers.authorization;
+  const bearer = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const cookie = readCookie(req, SESSION_COOKIE);
+
+  let dbUser = null;
+  let fromCookie = false;
+
+  if (bearer) dbUser = verifyLoginToken(bearer);
+  if (!dbUser && cookie) {
+    dbUser = verifyLoginToken(cookie);
+    fromCookie = true;
+  }
+
+  if (!dbUser) {
+    if (!bearer && !cookie) return { anonymous: true, status: 401, error: 'Authentifizierung erforderlich' };
     return { status: 401, error: 'Ungültiger oder abgelaufener Token' };
   }
 

@@ -94,3 +94,7 @@ es keine Inline-`<script>`-Blöcke; `onclick=`-Handler im HTML sind über
 `script-src-attr 'unsafe-inline'` erlaubt und in Kombination mit strikter
 Output-Escaping als unkritisch bewertet (siehe Kommentar in `server/index.js`).
 Bei neuem Code, der User-Input in den DOM schreibt: escapen, nicht auf die CSP verlassen.
+
+## Cache-Busting
+
+Beim Start berechnet `server/assets.js` einen Hash über `public/js` und `public/css` und hängt ihn als `?v=<hash>` an alle `/js/…`- und `/css/…`-Referenzen der Seiten `index.html`, `login.html` und `admin.html`; die Seiten werden mit `Cache-Control: no-cache` aus dem Speicher ausgeliefert (die Dateien auf der Platte bleiben unverändert). Neue Skripte/Stylesheets müssen daher nur normal per `src="/js/x.js"` bzw. `href="/css/x.css"` eingebunden werden, und Änderungen an Assets wirken nach einem Neustart sofort trotz Cloudflare-Cache.
